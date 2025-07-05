@@ -43,6 +43,15 @@ private:
     u32 IRVersion = 0;
     u8 IRCmd = 0;
     u32 IRPos = 0;
+
+    // Ceravia's IR communication buffers and methods
+    u8 recvLen = 0;
+    char TxBuf[0xB8];
+    char RxBuf[0xB8];
+
+    // These two functions are slightly abstracted for platform IR communication
+    u8 SendIR(u8 len);
+    u8 ReadIR();
 };
 
 }

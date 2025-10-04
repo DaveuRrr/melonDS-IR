@@ -89,17 +89,27 @@ void writeByte(FILE * fh, uint16_t offset, uint16_t byte, size_t count){
 
 //mamba
 int pw_decompress_data(uint8_t *data, uint8_t *buf, size_t dlen) {
-    if(data == 0 || buf == 0) return -1;
+    if(data == 0 || buf == 0) {
+        printf("Decompress: NULL pointer\n");
+        return -1;
+    }
     size_t c = 0;
     size_t oc = 0;
     uint8_t decomp_type = data[c++];
-    if(decomp_type != 0x10)
-        printf("BAD");
+    if(decomp_type != 0x10) {
+        FILE* log = fopen("ir_debug.log", "a");
+        printf("Decompress: Bad type 0x%02X (expected 0x10)\n", decomp_type);
+        if(log) { fprintf(log, "    Decompress: Bad type 0x%02X (expected 0x10), first bytes: %02X %02X %02X %02X\n", decomp_type, data[0], data[1], data[2], data[3]); fclose(log); }
         return -1;
+    }
     // LE size
     uint32_t decomp_size = data[c] | data[c+1] << 8 | data[c+2] << 16;
-    if(decomp_size != 128)
+    if(decomp_size != 128) {
+        FILE* log = fopen("ir_debug.log", "a");
+        printf("Decompress: Bad size %u (expected 128)\n", decomp_size);
+        if(log) { fprintf(log, "    Decompress: Bad size %u (expected 128)\n", decomp_size); fclose(log); }
         return -1;
+    }
     c += 3;
     while(c < dlen) {
         // loop through header
@@ -400,7 +410,7 @@ uint16_t txToWalker(FILE * fh, char G2W_len, char * G2W_data, char * w2g){
     else if (CMD == 0x0c){
         w2g[0] = 0x0e;
         //Game sends 16 bit start addy, then a length
-        uint16_t addy = (uint16_t) G2W_data[8] * 256 - G2W_data[9]; //I spend 5 hours figuring out that the address here is the end address of the read not the start
+        uint16_t addy = (uint16_t) G2W_data[8] * 256 + G2W_data[9]; //I spend 5 hours figuring out that the address here is the end address of the read not the start
         uint8_t len_tmp = G2W_data[10];
         readEeprom(fh, addy, dataBuf, 0xb8);
         for (int i = 0; i < len_tmp; i++) w2g[i+8] = dataBuf[i];
@@ -416,8 +426,8 @@ uint16_t txToWalker(FILE * fh, char G2W_len, char * G2W_data, char * w2g){
         w2g[1] = addr;
 
         uint16_t offset = addr << 8 | (CMD & 0x80);
-//        if (offset > 0x8e80) offset -= 0x4800; undoing this will avoid the staging area
-
+        // Staging area: map 0x8C00-0x8FFF to final location 0xD000-0xD7FF
+        if (offset >= 0x8c00 && offset < 0x9000) offset += 0x4800;
 
         writeEeprom(fh, offset, G2W_data + 8, 128); //No need to copy, the data is already here
     }
@@ -427,13 +437,36 @@ uint16_t txToWalker(FILE * fh, char G2W_len, char * G2W_data, char * w2g){
         //Respond
         uint8_t addr = G2W_data[1];
         w2g[0] = 0x04;
+        w2g[1] = addr;
 
         uint16_t offset = addr << 8 | (CMD & 0x80);
-//        if (offset > 0x8e80) offset -= 0x4800; undoing this will avoid the staging area
+        // Staging area: map 0x8C00-0x8FFF to final location 0xD000-0xD7FF
+        if (offset >= 0x8c00 && offset < 0x9000) offset += 0x4800;
 
+        // Debug logging to file
+        FILE* logfile = fopen("ir_debug.log", "a");
+        if (logfile) {
+            fprintf(logfile, "Compressed write: CMD=0x%02X addr=0x%02X -> offset=0x%04X\n", CMD, addr, offset);
+            fflush(logfile);
+        }
+        printf("Compressed write: CMD=0x%02X addr=0x%02X -> offset=0x%04X\n", CMD, addr, offset);
 
-        int res = pw_decompress_data((uint8_t * ) G2W_data + 8, decompBuf, len - 8);
-        writeEeprom(fh, offset, decompBuf, 128);
+        int res = pw_decompress_data((uint8_t * ) G2W_data + 8, decompBuf, G2W_len - 8);
+        if (res == 0) {
+            writeEeprom(fh, offset, decompBuf, 128);
+            if (logfile) {
+                fprintf(logfile, "  Successfully wrote decompressed data to 0x%04X\n", offset);
+                fflush(logfile);
+            }
+            printf("  Successfully wrote decompressed data to 0x%04X\n", offset);
+        } else {
+            if (logfile) {
+                fprintf(logfile, "  ERROR: Decompression failed, res=%d\n", res);
+                fflush(logfile);
+            }
+            printf("  ERROR: Decompression failed, res=%d\n", res);
+        }
+        if (logfile) fclose(logfile);
     }
 
 

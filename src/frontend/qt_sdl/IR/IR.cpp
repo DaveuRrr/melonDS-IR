@@ -2,6 +2,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QtSerialPort/QSerialPort>
+#include <QDateTime>
 
 
 
@@ -119,11 +120,6 @@ void IR_OpenSerialPort(void * userdata){
         #endif
 
         serial->setPortName(portPath);
-        serial->setBaudRate(QSerialPort::Baud115200);
-        serial->setDataBits(QSerialPort::Data8);
-        serial->setParity(QSerialPort::NoParity);
-        serial->setStopBits(QSerialPort::OneStop);
-        serial->setFlowControl(QSerialPort::NoFlowControl);
 
         // Log to file for debugging
         FILE* log = fopen("ir_serial.log", "a");
@@ -141,7 +137,21 @@ void IR_OpenSerialPort(void * userdata){
             }
         }
         else {
-            QString success = QString("Serial port opened successfully: %1 (115200 8N1)\n").arg(portPath);
+            // Configure port settings AFTER opening
+            serial->setBaudRate(QSerialPort::Baud115200);
+            serial->setDataBits(QSerialPort::Data8);
+            serial->setParity(QSerialPort::NoParity);
+            serial->setStopBits(QSerialPort::OneStop);
+            serial->setFlowControl(QSerialPort::NoFlowControl);
+
+            // Explicitly set DTR and RTS high for device stability
+            serial->setDataTerminalReady(true);
+            // serial->setRequestToSend(true);
+
+            // Clear any stale data in buffers
+            serial->clear();
+
+            QString success = QString("Serial port opened successfully: %1 (115200 8N1, DTR=1, RTS=1)\n").arg(portPath);
             printf("%s", success.toUtf8().constData());
             if (log) {
                 fprintf(log, "%s", success.toUtf8().constData());
@@ -169,6 +179,17 @@ u8 IR_Serial_SendPacket(char* data, int len, void * userdata){
     }
 
     qint64 written = serial->write(data, len);
+
+    if (written < 0) {
+        QString error = QString("Serial write error: %1\n").arg(serial->errorString());
+        printf("%s", error.toUtf8().constData());
+        if (log) {
+            fprintf(log, "%s", error.toUtf8().constData());
+            fclose(log);
+        }
+        return 0;
+    }
+
     serial->flush();
 
     printf("Serial wrote %lld bytes: ", written);
@@ -196,8 +217,18 @@ u8 IR_Serial_RecievePacket(char* data, int len,void * userdata){
     }
 
     FILE* log = fopen("ir_serial.log", "a");
-
     qint64 bytesRead = serial->read(data, len);
+
+    if (bytesRead < 0) {
+        QString error = QString("Serial read error: %1\n").arg(serial->errorString());
+        printf("%s", error.toUtf8().constData());
+        if (log) {
+            fprintf(log, "%s", error.toUtf8().constData());
+            fclose(log);
+        }
+        return 0;
+    }
+
     if (bytesRead > 0) {
         printf("Serial Read %lld bytes: ", bytesRead);
         for (int i = 0; i < bytesRead; ++i)

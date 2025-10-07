@@ -89,7 +89,16 @@ IRSettingsDialog::IRSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui
     ui->txtEepromFile->setText(cfg.GetQString("IR.EEPROMPath"));
     //ui->textSerialPath->text());
 
-
+    // Load TCP settings
+    ui->boxHostIP->setText(cfg.GetQString("IR.TCP.HostIP"));
+    ui->boxSelfPort->setValue(cfg.GetInt("IR.TCP.SelfPort"));
+    ui->txtHostPort->setValue(cfg.GetInt("IR.TCP.HostPort"));
+    bool isTCPServer = cfg.GetBool("IR.TCP.IsServer");
+    if (isTCPServer) {
+        ui->rb_TCPServer->setChecked(true);
+    } else {
+        ui->rb_TCPClient->setChecked(true);
+    }
 
     toggleCompatSettings(ui->rbCompat->isChecked());
     toggleSerialSettings(ui->rbSerial->isChecked());
@@ -254,7 +263,11 @@ void IRSettingsDialog::done(int r)
 
         cfg.SetQString("IR.EEPROMPath", ui->txtEepromFile->text());
 
-
+        // Save TCP settings
+        cfg.SetQString("IR.TCP.HostIP", ui->boxHostIP->text());
+        cfg.SetInt("IR.TCP.SelfPort", ui->boxSelfPort->value());
+        cfg.SetInt("IR.TCP.HostPort", ui->txtHostPort->value());
+        cfg.SetBool("IR.TCP.IsServer", ui->rb_TCPServer->isChecked());
 
 
       //  auto& cfg = emuInstance->getGlobalConfig();

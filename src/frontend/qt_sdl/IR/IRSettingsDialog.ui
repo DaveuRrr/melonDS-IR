@@ -134,6 +134,9 @@
          <property name="title">
           <string>Serial Port Settings</string>
          </property>
+         <property name="toolTip">
+          <string>Switch between Compatibility and Serial to reset connection</string>
+         </property>
          <layout class="QGridLayout" name="gridLayout_3">
           <item row="1" column="0">
            <widget class="QLabel" name="labelPort">

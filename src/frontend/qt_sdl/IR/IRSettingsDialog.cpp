@@ -108,7 +108,7 @@ IRSettingsDialog::IRSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui
 
 
 
-    ui->lblSelfIP->setText(QString("000.000.0.0"));
+    ui->lblSelfIP->setText(QString("0.0.0.0"));
 
     ui->txtDevLog->setText(cfg.GetQString("IR.PacketLogFile"));
 

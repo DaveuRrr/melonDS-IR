@@ -82,6 +82,22 @@ u8 IR_TCP_RecievePacket(char* data, int len, void * userdata){
 //--------------------SERIAL = 1
 QSerialPort *serial = nullptr;
 
+bool IR_IsSerialHealthy(){
+    if (!serial || !serial->isOpen()) {
+        return false;
+    }
+
+    // Check for serial port errors that indicate disconnection
+    QSerialPort::SerialPortError error = serial->error();
+    if (error == QSerialPort::ResourceError ||
+        error == QSerialPort::PermissionError ||
+        error == QSerialPort::DeviceNotFoundError) {
+        return false;
+    }
+
+    return true;
+}
+
 void IR_CloseSerialPort(){
     if (serial) {
         if (serial->isOpen()) {
@@ -100,6 +116,10 @@ void IR_CloseSerialPort(){
 }
 
 void IR_OpenSerialPort(void * userdata){
+    if (!IR_IsSerialHealthy()) {
+        IR_CloseSerialPort();
+    }
+
     if (!serial){
 
         EmuInstance* inst = (EmuInstance*)userdata;
@@ -375,12 +395,10 @@ u8 IR_SendPacket(char* data, int len, void * userdata){
     int IRMode = cfg.GetInt("IR.Mode");
 
     // Cleanup when mode changes
-    if (IRMode != lastIRMode && lastIRMode != -1) {
+    if (IRMode != lastIRMode) {
         if (lastIRMode == 1) {
-            // Was in Serial mode, close it
             IR_CloseSerialPort();
         }
-        // Could add TCP/Direct cleanup here if needed
     }
     lastIRMode = IRMode;
 
@@ -398,8 +416,8 @@ u8 IR_RecievePacket(char* data, int len, void * userdata){
 
     int IRMode = cfg.GetInt("IR.Mode");
 
-    // Cleanup when mode changes (mirror SendPacket logic)
-    if (IRMode != lastIRMode && lastIRMode != -1) {
+    // Cleanup when mode changes
+    if (IRMode != lastIRMode) {
         if (lastIRMode == 1) {
             IR_CloseSerialPort();
         }

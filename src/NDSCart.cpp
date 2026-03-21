@@ -23,7 +23,7 @@
 #include "CRC32.h"
 #include "Platform.h"
 #include "ROMList.h"
-#include "melonDLDI.h"
+#include "NDSCart/melonDLDI.h"
 #include "FATStorage.h"
 #include "Utils.h"
 

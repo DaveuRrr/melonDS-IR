@@ -22,27 +22,61 @@ namespace melonDS::Platform
 QTcpServer *server = nullptr;
 QTcpSocket *sock = nullptr;
 void IR_OpenTCP(void * userdata){
-    int conn = 0;
-    if (!server){
-
-        server = new QTcpServer();
-        if (!server->listen(QHostAddress::Any, 8081)) {
-            printf("Failed to start TCP server: %s\n", server->errorString().toUtf8().constData());
-            return;
+    EmuInstance* inst = (EmuInstance*)userdata;
+    auto& cfg = inst->getLocalConfig();
+    bool isServer = cfg.GetBool("IR.TCP.IsServer");
+    if (isServer) {
+        // SERVER MODE: Listen for incoming connections
+        if (!server){
+            int port = cfg.GetInt("IR.TCP.SelfPort");
+            server = new QTcpServer();
+            if (!server->listen(QHostAddress::Any, port)) {
+                printf("Failed to start TCP server on port %d: %s\n", port, server->errorString().toUtf8().constData());
+                return;
+            }
+            printf("TCP server listening on port %d\n", port);
         }
-        printf("TCP server listening on port 8081\n");
-    }
 
-    else return;
-
-    while(conn == 0){
-        QCoreApplication::processEvents();
-        if (!sock && server->hasPendingConnections()) {
-            sock = server->nextPendingConnection();
-            printf("Client connected\n");
-            conn = 1;
+        // Clean up disconnected socket
+        if (sock && sock->state() != QAbstractSocket::ConnectedState) {
+            delete sock;
+            sock = nullptr;
+            printf("Client disconnected\n");
         }
-        QThread::msleep(10); // avoid CPU spin
+
+        // Check for new connection (non-blocking)
+        if (!sock) {
+            QCoreApplication::processEvents();
+            if (server->hasPendingConnections()) {
+                sock = server->nextPendingConnection();
+                printf("Client connected from %s\n", sock->peerAddress().toString().toUtf8().constData());
+            }
+        }
+    } else {
+        // CLIENT MODE: Connect to remote server
+        if (!sock) {
+            QString hostIP = cfg.GetQString("IR.TCP.HostIP");
+            int hostPort = cfg.GetInt("IR.TCP.HostPort");
+
+            sock = new QTcpSocket();
+            printf("Attempting to connect to %s:%d\n", hostIP.toUtf8().constData(), hostPort);
+            sock->connectToHost(hostIP, hostPort);
+
+            // Wait briefly for connection
+            if (sock->waitForConnected(10)) {
+                printf("Connected to server %s:%d\n", hostIP.toUtf8().constData(), hostPort);
+            } else {
+                printf("Connection failed: %s\n", sock->errorString().toUtf8().constData());
+                delete sock;
+                sock = nullptr;
+            }
+        }
+        // Clean up disconnected socket
+        else if (sock->state() != QAbstractSocket::ConnectedState) {
+            delete sock;
+            sock = nullptr;
+            printf("Disconnected from server\n");
+        }
     }
 }
 
@@ -445,8 +479,10 @@ void IR_LogPacket(char * data, int len, bool isTx, void * userdata){
     EmuInstance* inst = (EmuInstance*)userdata;
     auto& cfg = inst->getLocalConfig();
 
-
-    if (!fh) fh = OpenFile(cfg.GetString("IR.PacketLogFile"), FileMode::Append);
+    std::string logPath = cfg.GetString("IR.PacketLogFile");
+    if (logPath.empty()) return;
+    if (!fh) fh = OpenFile(logPath, FileMode::Append);
+    // if (!fh) fh = OpenFile(cfg.GetString("IR.PacketLogFile"), FileMode::Append);
 
 
     if (isTx) FileWrite("Tx: ", 1, 4, fh);

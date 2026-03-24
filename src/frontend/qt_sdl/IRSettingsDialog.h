@@ -64,12 +64,12 @@ private slots:
     void toggleCompatSettings(bool checked);
     void toggleSerialSettings(bool checked);
     void toggleTCPSettings(bool checked);
-    void toggleDirectSettings(bool checked);
+    // void toggleDirectSettings(bool checked);
 
     void toggleTCPServer(bool checked);
     void toggleTCPClient(bool checked);
 
-    void on_PacketLogBrowse_clicked();
+    // void on_PacketLogBrowse_clicked();
     void on_EepromBrowse_clicked();
 private:
     Ui::IRSettingsDialog* ui;

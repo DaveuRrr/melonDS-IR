@@ -29,10 +29,9 @@ set(SOURCES_QT_SDL
     MPSettingsDialog.cpp
     WifiSettingsDialog.cpp
 
-    IR/IRSettingsDialog.cpp
+    IRSettingsDialog.cpp
+    Platform_IR.cpp
 
-    IR/PokeEscalator.cpp
-    IR/IR.cpp
     InterfaceSettingsDialog.cpp
     ROMInfoDialog.cpp
     RAMInfoDialog.cpp

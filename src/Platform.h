@@ -477,7 +477,7 @@ void* DynamicLibrary_LoadFunction(DynamicLibrary* lib, const char* name);
  * @param len the size of valid data.
  * @return Unused, but may be useful in the future.
  */
-u8 IR_SendPacket(char * data, int len, void * userdata);
+u8 IRSendPacket(char * data, int len, void * userdata);
 
 
 /**
@@ -486,13 +486,9 @@ u8 IR_SendPacket(char * data, int len, void * userdata);
  * @param len the size of VALID data in the "data" buffer.
  * @return same as len.
  */
-u8 IR_RecievePacket(char * data, int len, void * userdata);
+u8 IRReceivePacket(char * data, int len, void * userdata);
 
-void IR_LogPacket(char * data, int len, bool isTx, void * userdata);
-
-
-
-
+// void IR_LogPacket(char * data, int len, bool isTx, void * userdata);
 
 }
 }

@@ -138,7 +138,7 @@ u8 CartRetailIR::SPITransmitReceive(u8 val)
 u8 CartRetailIR::ReadIR()
 {
     char tempBuf[0xB8];
-    int len = Platform::IR_RecievePacket(tempBuf, sizeof(tempBuf), UserData);
+    int len = Platform::IRReceivePacket(tempBuf, sizeof(tempBuf), UserData);
     u8 pointer = 0;
     long long lastRxTime = Platform::GetUSCount();
 
@@ -155,26 +155,19 @@ u8 CartRetailIR::ReadIR()
         // keep trying to Rx until 3500us has passed
         while ((Platform::GetUSCount() - lastRxTime) < 3500) // Maybe this can be fine tuned
         {
-            len = Platform::IR_RecievePacket(tempBuf, sizeof(tempBuf), UserData);
-            if (len <= 0)
-            {
-                continue;
-            }
+            len = Platform::IRReceivePacket(tempBuf, sizeof(tempBuf), UserData);
+            if (len <= 0) continue;
             else
             {
                 lastRxTime = Platform::GetUSCount();
-                for (int i = 0; i < len; i++)
-                {
-                    RxBuf[pointer + i] = tempBuf[i];
-                }
+                for (int i = 0; i < len; i++) RxBuf[pointer + i] = tempBuf[i];
                 pointer = pointer + len;
             }
         }
     }
 
     recvLen = pointer;
-    if (recvLen == 0)
-        return 0;
+    if (recvLen == 0) return 0;
 
     /*
     printf("\nRecieved %d Bytes \n", recvLen);
@@ -191,12 +184,10 @@ u8 CartRetailIR::SendIR(u8 len)
 {
     int sent;
     // Immediate disconnect. This packet needs to WAIT or else it will be piggybacked onto the latest packet (on the walker's end)
-    if ((u8)TxBuf[0] == 94)
-        Platform::Sleep(10000);
+    if ((u8)TxBuf[0] == 94) Platform::Sleep(10000);
 
-    sent = Platform::IR_SendPacket(TxBuf, len, UserData);
-    if (sent < 0)
-        perror("send error");
+    sent = Platform::IRSendPacket(TxBuf, len, UserData);
+    if (sent < 0) perror("send error");
 
     return 0;
 }

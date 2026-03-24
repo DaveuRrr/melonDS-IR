@@ -63,7 +63,7 @@ IRSettingsDialog::IRSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui
     connect(ui->rbCompat, &QRadioButton::toggled, this, &IRSettingsDialog::toggleCompatSettings);
     connect(ui->rbSerial, &QRadioButton::toggled, this, &IRSettingsDialog::toggleSerialSettings);
     connect(ui->rbTCP, &QRadioButton::toggled, this, &IRSettingsDialog::toggleTCPSettings);
-    connect(ui->rbDirect, &QRadioButton::toggled, this, &IRSettingsDialog::toggleDirectSettings);
+    // connect(ui->rbDirect, &QRadioButton::toggled, this, &IRSettingsDialog::toggleDirectSettings);
 
 
     connect(ui->rb_TCPServer, &QRadioButton::toggled, this, &IRSettingsDialog::toggleTCPServer);
@@ -74,19 +74,19 @@ IRSettingsDialog::IRSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui
     if (IRMode == 0) ui->rbCompat->setChecked(true);
     else if (IRMode == 1) ui->rbSerial->setChecked(true);
     else if (IRMode == 2) ui->rbTCP->setChecked(true);
-    else if (IRMode == 3) ui->rbDirect->setChecked(true);
+    // else if (IRMode == 3) ui->rbDirect->setChecked(true);
 
 
 
     ui->groupBoxSerial->setEnabled(false);
     ui->groupBoxTCP->setEnabled(false);
-    ui->groupBoxDirect->setEnabled(false);
+    // ui->groupBoxDirect->setEnabled(false);
 
 
 
 
     ui->txtSerialPath->setText(cfg.GetQString("IR.SerialPortPath"));
-    ui->txtEepromFile->setText(cfg.GetQString("IR.EEPROMPath"));
+    // ui->txtEepromFile->setText(cfg.GetQString("IR.EEPROMPath"));
     //ui->textSerialPath->text());
 
     // Load TCP settings
@@ -103,14 +103,14 @@ IRSettingsDialog::IRSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui
     toggleCompatSettings(ui->rbCompat->isChecked());
     toggleSerialSettings(ui->rbSerial->isChecked());
     toggleTCPSettings(ui->rbTCP->isChecked());
-    toggleDirectSettings(ui->rbDirect->isChecked());
+    // toggleDirectSettings(ui->rbDirect->isChecked());
 
 
 
 
     ui->lblSelfIP->setText(QString("0.0.0.0"));
 
-    ui->txtDevLog->setText(cfg.GetQString("IR.PacketLogFile"));
+    // ui->txtDevLog->setText(cfg.GetQString("IR.PacketLogFile"));
 
 
 
@@ -136,10 +136,10 @@ void IRSettingsDialog::toggleTCPSettings(bool checked){
     ui->groupBoxTCP->setEnabled(checked);
 }
 
-void IRSettingsDialog::toggleDirectSettings(bool checked){
+// void IRSettingsDialog::toggleDirectSettings(bool checked){
 
-    ui->groupBoxDirect->setEnabled(checked);
-}
+//     ui->groupBoxDirect->setEnabled(checked);
+// }
 
 
 
@@ -175,26 +175,26 @@ inline void IRSettingsDialog::updateLastDevIRFolder(QString& filename)
 
 
 
-void IRSettingsDialog::on_PacketLogBrowse_clicked()
-{
-    QString file = QFileDialog::getOpenFileName(this,
-                                                "Select IR log file",
-                                                lastDevIRFolder,
-                                                "Txt files (*.txt);;Any file (*.*)");
+// void IRSettingsDialog::on_PacketLogBrowse_clicked()
+// {
+//     QString file = QFileDialog::getOpenFileName(this,
+//                                                 "Select IR log file",
+//                                                 lastDevIRFolder,
+//                                                 "Txt files (*.txt);;Any file (*.*)");
 
-    if (file.isEmpty()) return;
+//     if (file.isEmpty()) return;
 
-    if (!Platform::CheckFileWritable(file.toStdString()))
-    {
-        QMessageBox::critical(this, "melonDS", "Unable to write to IR packlet log file.\nPlease check file/folder write permissions.");
-        return;
-    }
+//     if (!Platform::CheckFileWritable(file.toStdString()))
+//     {
+//         QMessageBox::critical(this, "melonDS", "Unable to write to IR packlet log file.\nPlease check file/folder write permissions.");
+//         return;
+//     }
 
 
-    updateLastDevIRFolder(file);
+//     updateLastDevIRFolder(file);
 
-    ui->txtDevLog->setText(file);
-}
+//     ui->txtDevLog->setText(file);
+// }
 
 
 void IRSettingsDialog::on_EepromBrowse_clicked()
@@ -213,7 +213,7 @@ void IRSettingsDialog::on_EepromBrowse_clicked()
     }
 
 
-    ui->txtEepromFile->setText(file);
+    // ui->txtEepromFile->setText(file);
 }
 
 
@@ -249,7 +249,7 @@ void IRSettingsDialog::done(int r)
         if (ui->rbCompat->isChecked() == true) IRMode = 0;
         if (ui->rbSerial->isChecked() == true) IRMode = 1;
         if (ui->rbTCP->isChecked() == true) IRMode = 2;
-        if (ui->rbDirect->isChecked() == true) IRMode = 3;
+        // if (ui->rbDirect->isChecked() == true) IRMode = 3;
         //printf("IrMode: %d\n", IRMode);
 
 
@@ -261,7 +261,7 @@ void IRSettingsDialog::done(int r)
 
         cfg.SetQString("IR.SerialPortPath", ui->txtSerialPath->text());
 
-        cfg.SetQString("IR.EEPROMPath", ui->txtEepromFile->text());
+        // cfg.SetQString("IR.EEPROMPath", ui->txtEepromFile->text());
 
         // Save TCP settings
         cfg.SetQString("IR.TCP.HostIP", ui->boxHostIP->text());
@@ -274,7 +274,7 @@ void IRSettingsDialog::done(int r)
       //  auto& instcfg = emuInstance->getLocalConfig();
 
        // cfg.SetBool("Emu.ExternalBIOSEnable", ui->chkExternalBIOS->isChecked());
-        cfg.SetQString("IR.PacketLogFile", ui->txtDevLog->text());
+        // cfg.SetQString("IR.PacketLogFile", ui->txtDevLog->text());
 
 
 

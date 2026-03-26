@@ -1,34 +1,10 @@
 #include <stdio.h>
 #include <string.h>
-
-#ifdef __WIN32__
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-
-    #define socket_t    SOCKET
-    #define sockaddr_t  SOCKADDR
-    #define sockaddr_in_t  SOCKADDR_IN
-#else
-    #include <unistd.h>
-    #include <netinet/in.h>
-    #include <sys/select.h>
-    #include <sys/socket.h>
-
-    #define socket_t    int
-    #define sockaddr_t  struct sockaddr
-    #define sockaddr_in_t  struct sockaddr_in
-    #define closesocket close
-#endif
-
-#ifndef INVALID_SOCKET
-    #define INVALID_SOCKET  (socket_t)-1
-#endif
-
-// #include <QTcpServer>
-// #include <QTcpSocket>
-// #include <QDateTime>
-
-
+#include <QTcpServer>
+#include <QTcpSocket>
+#include <QMutex>
+#include <QThread>
+#include <QRandomGenerator>
 #include <QtSerialPort/QSerialPort>
 
 #include "Platform.h"
@@ -40,10 +16,9 @@ namespace melonDS::Platform
 {
 
 QSerialPort *serial = nullptr;
-// QTcpServer *server = nullptr;
-// QTcpSocket *sock = nullptr;
-socket_t server = INVALID_SOCKET;
-socket_t sock = INVALID_SOCKET;
+QTcpServer *server = nullptr;
+QTcpSocket *sock = nullptr;
+QMutex tcpMutex;
 
 enum IRMode
 {
@@ -55,181 +30,121 @@ enum IRMode
 /******************************************************************************
  * IR Socket TCP
 ******************************************************************************/
-bool IRSocketOpen(void * userdata)
+void IRSocketOpen(void * userdata)
 {
+    QMutexLocker locker(&tcpMutex);
+
     EmuInstance* inst = (EmuInstance*)userdata;
     auto& cfg = inst->getLocalConfig();
     bool isServer = cfg.GetBool("IR.TCP.IsServer");
 
-    if (isServer) 
+    if (isServer)
     {
-        // SERVER MODE: Listen for incoming connections
-        if (server == INVALID_SOCKET)
+        // SERVER MODE: Create server if needed
+        if (!server)
         {
-            server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-            if (server == INVALID_SOCKET)
-            {
-                Log(LogLevel::Error, "IRSocketOpen: Failed to create server socket\n");
-                return false;
-            }
-
+            server = new QTcpServer();
             int serverPort = cfg.GetInt("IR.TCP.SelfPort");
-            sockaddr_in_t serverAddr;
-            memset(&serverAddr, 0, sizeof(serverAddr));
-            serverAddr.sin_family = AF_INET;
-            serverAddr.sin_addr.s_addr = INADDR_ANY;
-            serverAddr.sin_port = htons(serverPort);
-
-            if (bind(server, (sockaddr_t*)&serverAddr, sizeof(serverAddr)) < 0)
+            if (!server->listen(QHostAddress::Any, serverPort))
             {
-                Log(LogLevel::Error, "IRSocketOpen: Failed to bind server socket\n");
-                return false;
+                Log(LogLevel::Error, "Failed to start TCP server on port %d\n", serverPort);
+                delete server;
+                server = nullptr;
+                return;
             }
-            
-            if (listen(server, 1) < 0)
-            {
-                Log(LogLevel::Error, "IRSocketOpen: Failed to listen on server socket\n");
-                closesocket(server);
-                return false;
-            }
-            Log(LogLevel::Info, "IRSocketOpen: TCP server listening on port %d\n", serverPort);
+            Log(LogLevel::Info, "TCP server listening on port %d\n", serverPort);
         }
 
-        // SERVER MODE: Listening to client
-        if (sock != INVALID_SOCKET)
+        // Check for disconnected client
+        if (sock && sock->state() != QAbstractSocket::ConnectedState)
         {
-            char buf[1];
-            int result = recv(sock, buf, 1, MSG_PEEK);
-            if (result == 0 || (result < 0 && 
-#ifdef __WIN32__
-                WSAGetLastError() != WSAEWOULDBLOCK
-#else
-                errno != EWOULDBLOCK && errno != EAGAIN
-#endif
-            ))
-            {
-                closesocket(sock);
-                sock = INVALID_SOCKET;
-                Log(LogLevel::Info, "Client disconnected\n");
-            }
+            delete sock;
+            sock = nullptr;
+            Log(LogLevel::Info, "Client disconnected\n");
         }
 
-        if (sock == INVALID_SOCKET)
+        // Accept new client if available
+        if (!sock && server->hasPendingConnections())
         {
-            fd_set readFDS;
-            FD_ZERO(&readFDS);
-            FD_SET(server, &readFDS);
-            struct timeval tv = {0, 0};
-            if (select(server + 1, &readFDS, NULL, NULL, &tv) > 0)
-            {
-                sockaddr_in_t clientAddr;
-                socklen_t addrLen = sizeof(clientAddr);
-                sock = accept(server, (sockaddr_t*)&clientAddr, &addrLen);
-                if (sock != INVALID_SOCKET) Log(LogLevel::Info, "Client connected");
-            }
+            QCoreApplication::processEvents();
+            sock = server->nextPendingConnection();
+            Log(LogLevel::Info, "Client connected from %s\n", sock->peerAddress().toString().toUtf8().constData());
         }
-
-    } 
-    else 
+    }
+    else
     {
         // CLIENT MODE: Connect to remote server
-        if (sock == INVALID_SOCKET)
+        if (!sock)
         {
-            sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-            if (sock == INVALID_SOCKET)
-            {
-                Log(LogLevel::Error, "IRSocketOpen: Failed to create client socket\n");
-                return false;
-            }
-
             QString hostIP = cfg.GetQString("IR.TCP.HostIP");
             int hostPort = cfg.GetInt("IR.TCP.HostPort");
-            sockaddr_in_t serverAddr;
-            memset(&serverAddr, 0, sizeof(serverAddr));
-            serverAddr.sin_family = AF_INET;
-            serverAddr.sin_port = htons(hostPort);
 
-#ifdef __WIN32__
-            if (InetPtonA(AF_INET, hostIP.toUtf8().constData(), &serverAddr.sin_addr) <= 0) 
-#else
-            if (inet_aton(hostIP.toUtf8().constData(), &serverAddr.sin_addr) == 0) 
-#endif
-            {
-                closesocket(sock);
-                sock = INVALID_SOCKET;
-                Log(LogLevel::Error, "IRSocketOpen: Invalid IP address %s\n", hostIP.toUtf8().constData());
-                return false;
-            }
+            sock = new QTcpSocket();
+            sock->connectToHost(hostIP, hostPort);
 
             Log(LogLevel::Info, "Attempting to connect to %s:%d\n", hostIP.toUtf8().constData(), hostPort);
 
-            if (connect(sock, (sockaddr_t*)&serverAddr, sizeof(serverAddr)) < 0) 
-            {
-                Log(LogLevel::Error, "Connection failed\n");
-                closesocket(sock);
-                sock = INVALID_SOCKET;
-                return false;
-            }
+            if (sock->waitForConnected(10)) Log(LogLevel::Info, "Connected to %s:%d\n", hostIP.toUtf8().constData(), hostPort);
 
-            Log(LogLevel::Info, "Connected to server %s:%d\n", hostIP.toUtf8().constData(), hostPort);
         }
-        else
+        else if (sock->state() != QAbstractSocket::ConnectedState)
         {
-
-            char buf[1];
-            int result = recv(sock, buf, 1, MSG_PEEK);
-            if (result == 0 || (result < 0 && 
-#ifdef __WIN32__
-                WSAGetLastError() != WSAEWOULDBLOCK
-#else
-                errno != EWOULDBLOCK && errno != EAGAIN
-#endif
-            ))
-            {
-                closesocket(sock);
-                sock = INVALID_SOCKET;
-                Log(LogLevel::Info, "Disconnected from server\n");
-            }
+            delete sock;
+            sock = nullptr;
+            Log(LogLevel::Info, "Disconnected from server\n");
         }
     }
-
-    return (sock != INVALID_SOCKET);
 }
 
 u8 IRSendPacketTCP(char* data, int len, void * userdata)
 {
-    if (!IRSocketOpen(userdata))
+    QCoreApplication::processEvents();
+    IRSocketOpen(userdata);
+
+    QMutexLocker locker(&tcpMutex);
+
+    if (!sock || sock->state() != QAbstractSocket::ConnectedState) return 0;
+
+    qint64 bytesWritten = sock->write(data, len);
+    sock->flush();
+
+    if (bytesWritten > 0)
     {
-        Log(LogLevel::Error, "No connection to send IR data\n");
-        return 0;
+        char stringBuffer[512];
+        int offset = 0;
+        for (int i = 0; i < bytesWritten && i < 32; ++i)
+        {
+            offset += snprintf(stringBuffer + offset, sizeof(stringBuffer) - offset, "%02X ", static_cast<unsigned char>(data[i]));
+        }
+        Log(LogLevel::Info, "Sent %lld bytes: %s\n", bytesWritten, stringBuffer);
     }
 
-    int bytesWritten = send(sock, data, len, 0);
-    if (bytesWritten > 0) 
-    {
-        Log(LogLevel::Info, "Sent %d bytes\n", bytesWritten);
-        return static_cast<int>(bytesWritten);
-    }
-
-    return 0;
+    return static_cast<u8>(bytesWritten);
 }
 
 u8 IRReceivePacketTCP(char* data, int len, void * userdata)
 {
-    if (!IRSocketOpen(userdata))
+    QCoreApplication::processEvents();
+    IRSocketOpen(userdata);
+
+    QMutexLocker locker(&tcpMutex);
+
+    if (!sock || sock->bytesAvailable() <= 0) return 0;
+
+    qint64 bytesRead = sock->read(data, len);
+
+    if (bytesRead > 0)
     {
-        Log(LogLevel::Error, "No connection to receive IR data\n");
-        return 0;
+        char stringBuffer[512];
+        int offset = 0;
+        for (int i = 0; i < bytesRead && i < 32; ++i)
+        {
+            offset += snprintf(stringBuffer + offset, sizeof(stringBuffer) - offset, "%02X ", static_cast<unsigned char>(data[i]));
+        }
+        Log(LogLevel::Info, "Received %lld bytes: %s\n", bytesRead, stringBuffer);
     }
 
-    int bytesRead = recv(sock, data, len, 0);
-    if (bytesRead > 0) 
-    {
-        Log(LogLevel::Info, "Received %d bytes\n", bytesRead);
-        return static_cast<int>(bytesRead);
-    }
-
-    return 0;
+    return static_cast<u8>(bytesRead);
 }
 
 

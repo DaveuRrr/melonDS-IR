@@ -63,11 +63,11 @@ private slots:
     void done(int r);
     void toggleCompatSettings(bool checked);
     void toggleSerialSettings(bool checked);
-    void toggleTCPSettings(bool checked);
+    void toggleNetworkSettings(bool checked);
     // void toggleDirectSettings(bool checked);
 
-    void toggleTCPServer(bool checked);
-    void toggleTCPClient(bool checked);
+    void toggleNetworkServer(bool checked);
+    void toggleNetworkClient(bool checked);
 
     // void on_PacketLogBrowse_clicked();
     void on_EepromBrowse_clicked();
@@ -75,17 +75,8 @@ private:
     Ui::IRSettingsDialog* ui;
     EmuInstance* emuInstance;
 
-    //0 - Compat, 1 - Serial, 2 - TCP, 3 - Direct
+    //0 - Compat, 1 - Serial, 2 - TCP, 3 - ENet, 4 - Direct
     int IRMode = 0;
-
-
-    void updateLastDevIRFolder(QString& filename);
-    QString lastDevIRFolder;
-
-
-   // void updateAdapterControls();
-   // std::vector<melonDS::AdapterData> adapters;
 };
 
 #endif // IRSETTINGSDIALOG_H
-

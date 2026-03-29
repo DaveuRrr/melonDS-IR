@@ -83,15 +83,28 @@
           <item row="9" column="0">
            <widget class="QRadioButton" name="rbTCP">
             <property name="whatsThis">
-             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Serial mode should be used if you have a physical IrDa adapter connected to this machine.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Emulates IR as TCP.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
             </property>
             <property name="text">
-             <string>TCP/IP</string>
+             <string>TCP</string>
+            </property>
+           </widget>
+          </item>
+          <item row="10" column="0">
+           <widget class="QRadioButton" name="rbENet">
+            <property name="whatsThis">
+             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Emulates IR as UDP.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+            </property>
+            <property name="text">
+             <string>UDP</string>
             </property>
            </widget>
           </item>
           <item row="8" column="0">
            <widget class="QRadioButton" name="rbSerial">
+            <property name="whatsThis">
+             <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Emulates IR as Serial&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+            </property>
             <property name="text">
              <string>Serial port</string>
             </property>
@@ -159,12 +172,12 @@
         </widget>
        </item>
        <item row="3" column="0">
-        <widget class="QGroupBox" name="groupBoxTCP">
+        <widget class="QGroupBox" name="groupBoxNetwork">
          <property name="enabled">
           <bool>true</bool>
          </property>
          <property name="title">
-          <string>TCP/IP Settings</string>
+          <string>Network Settings</string>
          </property>
          <layout class="QGridLayout" name="gridLayout_2">
           <item row="5" column="3">
@@ -178,7 +191,7 @@
            </widget>
           </item>
           <item row="0" column="0" alignment="Qt::AlignmentFlag::AlignLeft">
-           <widget class="QRadioButton" name="rb_TCPServer">
+           <widget class="QRadioButton" name="rb_NetworkServer">
             <property name="text">
              <string>Server</string>
             </property>
@@ -278,7 +291,7 @@
            </widget>
           </item>
           <item row="5" column="0" alignment="Qt::AlignmentFlag::AlignLeft">
-           <widget class="QRadioButton" name="rb_TCPClient">
+           <widget class="QRadioButton" name="rb_NetworkClient">
             <property name="text">
              <string>Client</string>
             </property>

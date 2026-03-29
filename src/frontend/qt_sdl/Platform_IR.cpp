@@ -6,10 +6,14 @@
 #include <QThread>
 #include <QRandomGenerator>
 #include <QtSerialPort/QSerialPort>
+#include <queue>
+#include <map>
+#include <enet/enet.h>
 
 #include "Platform.h"
 #include "Config.h"
 #include "EmuInstance.h"
+#include "MPInterface.h"
 
 
 namespace melonDS::Platform
@@ -18,25 +22,282 @@ namespace melonDS::Platform
 QSerialPort *serial = nullptr;
 QTcpServer *server = nullptr;
 QTcpSocket *sock = nullptr;
-QMutex tcpMutex;
+QMutex networkMutex;
+
+struct ENetState {
+    ENetHost* host = nullptr;
+    ENetPeer* peer = nullptr;
+    std::queue<ENetPacket*> rxQueue;
+    QMutex mutex;
+};
+std::map<int, ENetState*> enetStates;
+bool enetInited = false;
 
 enum IRMode
 {
     IR_PASSTHRU = 0,
     IR_SERIAL = 1,
     IR_TCP = 2,
+    IR_ENET = 3,
 };
+
+
+/******************************************************************************
+ * IR ENet (UDP-based networking for Desktop-to-Desktop)
+******************************************************************************/
+void IRENetInit()
+{
+    if (enetInited) return;
+
+    if (enet_initialize() != 0)
+    {
+        Log(LogLevel::Error, "Failed to initialize ENet\n");
+        return;
+    }
+
+    enetInited = true;
+    Log(LogLevel::Info, "ENet initialized\n");
+}
+
+void IRENetDeinit()
+{
+    if (!enetInited) return;
+
+    for (auto& pair : enetStates)
+    {
+        ENetState* state = pair.second;
+
+        if (state->peer)
+        {
+            enet_peer_disconnect_now(state->peer, 0);
+            state->peer = nullptr;
+        }
+
+        if (state->host)
+        {
+            enet_host_destroy(state->host);
+            state->host = nullptr;
+        }
+
+        while (!state->rxQueue.empty())
+        {
+            enet_packet_destroy(state->rxQueue.front());
+            state->rxQueue.pop();
+        }
+
+        delete state;
+    }
+
+    enetStates.clear();
+    enet_deinitialize();
+    enetInited = false;
+    Log(LogLevel::Info, "ENet deinitialized\n");
+}
+
+void IRENetOpen(void* userdata)
+{
+    IRENetInit();
+
+    EmuInstance* inst = (EmuInstance*)userdata;
+    int instanceID = inst->getInstanceID();
+
+    if (enetStates.find(instanceID) == enetStates.end())
+    {
+        enetStates[instanceID] = new ENetState();
+    }
+
+    ENetState* state = enetStates[instanceID];
+    QMutexLocker locker(&state->mutex);
+
+    bool isServer = (instanceID == 0);
+    if (isServer)
+    {
+        // SERVER MODE
+        if (!state->host)
+        {
+            ENetAddress address;
+            address.host = ENET_HOST_ANY;
+            address.port = 7065;
+
+            state->host = enet_host_create(&address, 16, 2, 0, 0);
+
+            if (!state->host)
+            {
+                Log(LogLevel::Error, "ENet server creation failed on port %d\n", address.port);
+                return;
+            }
+
+            Log(LogLevel::Info, "ENet server on port %d\n", address.port);
+        }
+
+        // Process events (accept connections, receive packets)
+        ENetEvent event;
+        while (enet_host_service(state->host, &event, 0) > 0)
+        {
+            if (event.type == ENET_EVENT_TYPE_CONNECT)
+            {
+                state->peer = event.peer;
+                Log(LogLevel::Info, "ENet peer connected\n");
+            }
+            else if (event.type == ENET_EVENT_TYPE_DISCONNECT)
+            {
+                if (state->peer == event.peer) state->peer = nullptr;
+                Log(LogLevel::Info, "ENet peer disconnected\n");
+            }
+            else if (event.type == ENET_EVENT_TYPE_RECEIVE)
+            {
+                state->rxQueue.push(event.packet);
+            }
+        }
+    }
+    else
+    {
+        // CLIENT MODE
+        if (!state->host)
+        {
+            state->host = enet_host_create(nullptr, 16, 2, 0, 0);
+
+            if (!state->host)
+            {
+                Log(LogLevel::Error, "ENet client creation failed\n");
+                return;
+            }
+
+            Log(LogLevel::Info, "ENet client created\n");
+        }
+
+        if (!state->peer)
+        {
+            ENetAddress address;
+            address.host = 0x0100007F; // 127.0.0.1
+            address.port = 7065;
+
+            state->peer = enet_host_connect(state->host, &address, 2, 0);
+
+            if (state->peer) Log(LogLevel::Info, "ENet connecting to 127.0.0.1:%d\n", address.port);
+        }
+
+        // Process events (connection, disconnection, receive)
+        ENetEvent event;
+        while (enet_host_service(state->host, &event, 0) > 0)
+        {
+            if (event.type == ENET_EVENT_TYPE_CONNECT)
+            {
+                Log(LogLevel::Info, "ENet connected\n");
+            }
+            else if (event.type == ENET_EVENT_TYPE_DISCONNECT)
+            {
+                state->peer = nullptr;
+                Log(LogLevel::Info, "ENet disconnected\n");
+            }
+            else if (event.type == ENET_EVENT_TYPE_RECEIVE)
+            {
+                state->rxQueue.push(event.packet);
+            }
+        }
+    }
+}
+
+u8 IRSendPacketENet(char* data, int len, void* userdata)
+{
+    IRENetOpen(userdata);
+
+    EmuInstance* inst = (EmuInstance*)userdata;
+    int instanceID = inst->getInstanceID();
+
+    if (enetStates.find(instanceID) == enetStates.end()) return 0;
+    ENetState* state = enetStates[instanceID];
+
+    QMutexLocker locker(&state->mutex);
+
+    if (!state->peer || !state->host) return 0;
+
+    ENetPacket* packet = enet_packet_create(data, len, ENET_PACKET_FLAG_UNSEQUENCED);
+    if (!packet) return 0;
+
+    if (enet_peer_send(state->peer, 0, packet) < 0)
+    {
+        enet_packet_destroy(packet);
+        return 0;
+    }
+
+    enet_host_flush(state->host);
+
+    char stringBuffer[512];
+    int offset = 0;
+    for (int i = 0; i < len && i < 32; ++i)
+    {
+        offset += snprintf(stringBuffer + offset, sizeof(stringBuffer) - offset, "%02X ", static_cast<unsigned char>(data[i]));
+    }
+    Log(LogLevel::Info, "ID %d Sent %d bytes: %s\n", instanceID, len, stringBuffer);
+
+    return static_cast<u8>(len);
+}
+
+u8 IRReceivePacketENet(char* data, int len, void* userdata)
+{
+    IRENetOpen(userdata);
+
+    EmuInstance* inst = (EmuInstance*)userdata;
+    int instanceID = inst->getInstanceID();
+
+    if (enetStates.find(instanceID) == enetStates.end()) return 0;
+    ENetState* state = enetStates[instanceID];
+
+    QMutexLocker locker(&state->mutex);
+
+    if (!state->host) return 0;
+    if (state->rxQueue.empty()) return 0;
+
+    ENetPacket* packet = state->rxQueue.front();
+    state->rxQueue.pop();
+
+    int bytesRead = (packet->dataLength < (size_t)len) ? packet->dataLength : len;
+    memcpy(data, packet->data, bytesRead);
+
+    if (bytesRead > 0)
+    {
+        char stringBuffer[512];
+        int offset = 0;
+        for (int i = 0; i < bytesRead && i < 32; ++i)
+        {
+            offset += snprintf(stringBuffer + offset, sizeof(stringBuffer) - offset, "%02X ", static_cast<unsigned char>(data[i]));
+        }
+        Log(LogLevel::Info, "ID %d Received %d bytes: %s\n", instanceID, bytesRead, stringBuffer);
+    }
+
+    enet_packet_destroy(packet);
+
+    return static_cast<u8>(bytesRead);
+}
 
 /******************************************************************************
  * IR Socket TCP
 ******************************************************************************/
-void IRSocketOpen(void * userdata)
+void IRSocketClose()
 {
-    QMutexLocker locker(&tcpMutex);
+    QMutexLocker locker(&networkMutex);
+    if (sock)
+    {
+        delete sock;
+        sock = nullptr;
+    }
+    if (server)
+    {
+        delete server;
+        server = nullptr;
+    }
+}
+
+void IRSocketOpen(void* userdata)
+{
+    QMutexLocker locker(&networkMutex);
 
     EmuInstance* inst = (EmuInstance*)userdata;
     auto& cfg = inst->getLocalConfig();
-    bool isServer = cfg.GetBool("IR.TCP.IsServer");
+    bool isServer = cfg.GetBool("IR.Network.IsServer");
+    int instanceID = inst->getInstanceID();
+    if (instanceID > 0) isServer = false;
 
     if (isServer)
     {
@@ -44,7 +305,7 @@ void IRSocketOpen(void * userdata)
         if (!server)
         {
             server = new QTcpServer();
-            int serverPort = cfg.GetInt("IR.TCP.SelfPort");
+            int serverPort = cfg.GetInt("IR.Network.SelfPort");
             if (!server->listen(QHostAddress::Any, serverPort))
             {
                 Log(LogLevel::Error, "Failed to start TCP server on port %d\n", serverPort);
@@ -76,8 +337,8 @@ void IRSocketOpen(void * userdata)
         // CLIENT MODE: Connect to remote server
         if (!sock)
         {
-            QString hostIP = cfg.GetQString("IR.TCP.HostIP");
-            int hostPort = cfg.GetInt("IR.TCP.HostPort");
+            QString hostIP = cfg.GetQString("IR.Network.HostIP");
+            int hostPort = cfg.GetInt("IR.Network.HostPort");
 
             sock = new QTcpSocket();
             sock->connectToHost(hostIP, hostPort);
@@ -96,12 +357,12 @@ void IRSocketOpen(void * userdata)
     }
 }
 
-u8 IRSendPacketTCP(char* data, int len, void * userdata)
+u8 IRSendPacketTCP(char* data, int len, void* userdata)
 {
     QCoreApplication::processEvents();
     IRSocketOpen(userdata);
 
-    QMutexLocker locker(&tcpMutex);
+    QMutexLocker locker(&networkMutex);
 
     if (!sock || sock->state() != QAbstractSocket::ConnectedState) return 0;
 
@@ -116,18 +377,18 @@ u8 IRSendPacketTCP(char* data, int len, void * userdata)
         {
             offset += snprintf(stringBuffer + offset, sizeof(stringBuffer) - offset, "%02X ", static_cast<unsigned char>(data[i]));
         }
-        Log(LogLevel::Info, "Sent %lld bytes: %s\n", bytesWritten, stringBuffer);
+        Log(LogLevel::Info, "Sent %d bytes: %s\n", bytesWritten, stringBuffer);
     }
 
     return static_cast<u8>(bytesWritten);
 }
 
-u8 IRReceivePacketTCP(char* data, int len, void * userdata)
+u8 IRReceivePacketTCP(char* data, int len, void* userdata)
 {
     QCoreApplication::processEvents();
     IRSocketOpen(userdata);
 
-    QMutexLocker locker(&tcpMutex);
+    QMutexLocker locker(&networkMutex);
 
     if (!sock || sock->bytesAvailable() <= 0) return 0;
 
@@ -141,7 +402,7 @@ u8 IRReceivePacketTCP(char* data, int len, void * userdata)
         {
             offset += snprintf(stringBuffer + offset, sizeof(stringBuffer) - offset, "%02X ", static_cast<unsigned char>(data[i]));
         }
-        Log(LogLevel::Info, "Received %lld bytes: %s\n", bytesRead, stringBuffer);
+        Log(LogLevel::Info, "Received %d bytes: %s\n", bytesRead, stringBuffer);
     }
 
     return static_cast<u8>(bytesRead);
@@ -178,7 +439,7 @@ void IRSerialClosePort()
     }
 }
 
-void IRSerialOpenPort(void * userdata)
+void IRSerialOpenPort(void* userdata)
 {
     if (!IRSerial()) IRSerialClosePort();
 
@@ -223,7 +484,7 @@ void IRSerialOpenPort(void * userdata)
     return;
 }
 
-u8 IRSendPacketSerial(char* data, int len, void * userdata)
+u8 IRSendPacketSerial(char* data, int len, void* userdata)
 {
     QCoreApplication::processEvents();
     IRSerialOpenPort(userdata);
@@ -254,7 +515,7 @@ u8 IRSendPacketSerial(char* data, int len, void * userdata)
     return static_cast<u8>(bytesWritten);
 }
 
-u8 IRReceivePacketSerial(char* data, int len,void * userdata)
+u8 IRReceivePacketSerial(char* data, int len,void* userdata)
 {
     QCoreApplication::processEvents();
     IRSerialOpenPort(userdata);
@@ -284,38 +545,52 @@ u8 IRReceivePacketSerial(char* data, int len,void * userdata)
 /******************************************************************************
  * Platform IR Send & Receive
 ******************************************************************************/
-u8 IRSendPacket(char* data, int len, void * userdata)
+u8 IRSendPacket(char* data, int len, void* userdata)
 {
     EmuInstance* inst = (EmuInstance*)userdata;
     auto& cfg = inst->getLocalConfig();
 
-    int IRMode = cfg.GetInt("IR.Mode");
-    if (IRMode != IR_SERIAL) IRSerialClosePort();
+    int irMode = cfg.GetInt("IR.Mode");
 
-    //printf("Trying to send IR Packet in mode: %d\n", IRMode);
-    switch(IRMode)
+    int instanceID = inst->getInstanceID();
+    if (instanceID > 0) irMode = IR_ENET;
+
+    // Log(LogLevel::Info, "ID %d IRSendPacket mode=%d len=%d\n", instanceID, irMode, len);
+
+    if (irMode != IR_SERIAL) IRSerialClosePort();
+    if (irMode != IR_TCP) IRSocketClose();
+
+    switch(irMode)
     {
         case IR_PASSTHRU: return IR_PASSTHRU;
         case IR_SERIAL: return IRSendPacketSerial(data, len, userdata);
         case IR_TCP: return IRSendPacketTCP(data, len, userdata);
+        case IR_ENET: return IRSendPacketENet(data, len, userdata);
         default: return IR_PASSTHRU;
     }
 }
 
-u8 IRReceivePacket(char* data, int len, void * userdata)
+u8 IRReceivePacket(char* data, int len, void* userdata)
 {
     EmuInstance* inst = (EmuInstance*)userdata;
     auto& cfg = inst->getLocalConfig();
 
-    int IRMode = cfg.GetInt("IR.Mode");
-    if (IRMode != IR_SERIAL) IRSerialClosePort();
+    int irMode = cfg.GetInt("IR.Mode");
 
-    //printf("Trying to recieve IR Packet in mode: %d\n", IRMode);
-    switch(IRMode)
+    int instanceID = inst->getInstanceID();
+    if (instanceID > 0) irMode = IR_ENET;
+
+    // Log(LogLevel::Info, "ID %d IRReceivePacket mode=%d len=%d\n", instanceID, irMode, len);
+
+    if (irMode != IR_SERIAL) IRSerialClosePort();
+    if (irMode != IR_TCP) IRSocketClose();
+
+    switch(irMode)
     {
         case IR_PASSTHRU: return IR_PASSTHRU;
         case IR_SERIAL: return IRReceivePacketSerial(data, len, userdata);
         case IR_TCP: return IRReceivePacketTCP(data, len, userdata);
+        case IR_ENET: return IRReceivePacketENet(data, len, userdata);
         default: return IR_PASSTHRU;
     }
 }

@@ -72,8 +72,6 @@ DefaultList<int> DefaultInts =
     {"Instance*.Gdb.ARM9.Port", 3333},
 #endif
     {"LAN.HostNumPlayers", 16},
-    {"Instance*.IR.TCP.SelfPort", 8081},
-    {"Instance*.IR.TCP.HostPort", 8081},
 };
 
 RangeList IntRanges =
@@ -113,7 +111,6 @@ DefaultList<bool> DefaultBools =
 #endif
 #endif
     {"DSi.DSP.HLE", true},
-    {"Instance*.IR.TCP.IsServer", false}
 };
 
 DefaultList<std::string> DefaultStrings =

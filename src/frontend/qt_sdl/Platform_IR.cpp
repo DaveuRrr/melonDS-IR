@@ -35,7 +35,7 @@ bool enetInited = false;
 
 enum IRMode
 {
-    IR_PASSTHRU = 0,
+    IR_DEFAULT = 0,
     IR_SERIAL = 1,
     IR_TCP = 2,
     IR_ENET = 3,
@@ -98,26 +98,33 @@ void IRENetOpen(void* userdata)
 {
     IRENetInit();
 
+    bool isServer;
     EmuInstance* inst = (EmuInstance*)userdata;
     int instanceID = inst->getInstanceID();
+    auto& cfg = inst->getLocalConfig();
+    int irMode = cfg.GetInt("IR.Mode");
+    isServer = cfg.GetBool("IR.Network.IsServer");
+
+    if (instanceID > 0) irMode = IR_DEFAULT;
+    if (irMode == IR_DEFAULT) isServer = (instanceID == 0);
 
     if (enetStates.find(instanceID) == enetStates.end())
     {
         enetStates[instanceID] = new ENetState();
     }
-
     ENetState* state = enetStates[instanceID];
     QMutexLocker locker(&state->mutex);
 
-    bool isServer = (instanceID == 0);
     if (isServer)
     {
         // SERVER MODE
         if (!state->host)
         {
+            int serverPort = cfg.GetInt("IR.Network.SelfPort");
             ENetAddress address;
             address.host = ENET_HOST_ANY;
-            address.port = 7065;
+            address.port = serverPort;
+            if (irMode == IR_DEFAULT) address.port = 7065;
 
             state->host = enet_host_create(&address, 16, 2, 0, 0);
 
@@ -168,13 +175,23 @@ void IRENetOpen(void* userdata)
 
         if (!state->peer)
         {
+            QString hostIP = cfg.GetQString("IR.Network.HostIP");
+            int hostPort = cfg.GetInt("IR.Network.HostPort");
+            QHostAddress hostAddress(hostIP);
+            quint32 addressHex = qFromBigEndian(hostAddress.toIPv4Address());
+
             ENetAddress address;
-            address.host = 0x0100007F; // 127.0.0.1
-            address.port = 7065;
+            address.host = addressHex;
+            address.port = hostPort;
+            if (instanceID > 0)
+            {
+                address.host = 0x0100007F;
+                address.port = 7065;
+            }
 
             state->peer = enet_host_connect(state->host, &address, 2, 0);
 
-            if (state->peer) Log(LogLevel::Info, "ENet connecting to 127.0.0.1:%d\n", address.port);
+            if (state->peer) Log(LogLevel::Info, "ENet connecting to %d:%d\n", address.host, address.port);
         }
 
         // Process events (connection, disconnection, receive)
@@ -343,7 +360,7 @@ void IRSocketOpen(void* userdata)
             sock = new QTcpSocket();
             sock->connectToHost(hostIP, hostPort);
 
-            Log(LogLevel::Info, "Attempting to connect to %s:%d\n", hostIP.toUtf8().constData(), hostPort);
+            Log(LogLevel::Info, "TCP client connecting to %s:%d\n", hostIP.toUtf8().constData(), hostPort);
 
             if (sock->waitForConnected(10)) Log(LogLevel::Info, "Connected to %s:%d\n", hostIP.toUtf8().constData(), hostPort);
 
@@ -549,11 +566,10 @@ u8 IRSendPacket(char* data, int len, void* userdata)
 {
     EmuInstance* inst = (EmuInstance*)userdata;
     auto& cfg = inst->getLocalConfig();
-
     int irMode = cfg.GetInt("IR.Mode");
 
     int instanceID = inst->getInstanceID();
-    if (instanceID > 0) irMode = IR_ENET;
+    if (instanceID > 0) irMode = IR_DEFAULT;
 
     // Log(LogLevel::Info, "ID %d IRSendPacket mode=%d len=%d\n", instanceID, irMode, len);
 
@@ -562,11 +578,11 @@ u8 IRSendPacket(char* data, int len, void* userdata)
 
     switch(irMode)
     {
-        case IR_PASSTHRU: return IR_PASSTHRU;
+        case IR_DEFAULT: return IRSendPacketENet(data, len, userdata);
         case IR_SERIAL: return IRSendPacketSerial(data, len, userdata);
         case IR_TCP: return IRSendPacketTCP(data, len, userdata);
         case IR_ENET: return IRSendPacketENet(data, len, userdata);
-        default: return IR_PASSTHRU;
+        default: return IR_DEFAULT;
     }
 }
 
@@ -574,11 +590,10 @@ u8 IRReceivePacket(char* data, int len, void* userdata)
 {
     EmuInstance* inst = (EmuInstance*)userdata;
     auto& cfg = inst->getLocalConfig();
-
     int irMode = cfg.GetInt("IR.Mode");
 
     int instanceID = inst->getInstanceID();
-    if (instanceID > 0) irMode = IR_ENET;
+    if (instanceID > 0) irMode = IR_DEFAULT;
 
     // Log(LogLevel::Info, "ID %d IRReceivePacket mode=%d len=%d\n", instanceID, irMode, len);
 
@@ -587,11 +602,11 @@ u8 IRReceivePacket(char* data, int len, void* userdata)
 
     switch(irMode)
     {
-        case IR_PASSTHRU: return IR_PASSTHRU;
+        case IR_DEFAULT: return IRReceivePacketENet(data, len, userdata);
         case IR_SERIAL: return IRReceivePacketSerial(data, len, userdata);
         case IR_TCP: return IRReceivePacketTCP(data, len, userdata);
         case IR_ENET: return IRReceivePacketENet(data, len, userdata);
-        default: return IR_PASSTHRU;
+        default: return IR_DEFAULT;
     }
 }
 

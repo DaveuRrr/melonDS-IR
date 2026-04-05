@@ -6,6 +6,7 @@
 #include <QThread>
 #include <QRandomGenerator>
 #include <QtSerialPort/QSerialPort>
+#include <QtEndian>
 #include <queue>
 #include <map>
 #include <enet/enet.h>

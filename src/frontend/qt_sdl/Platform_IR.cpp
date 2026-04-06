@@ -6,7 +6,6 @@
 #include <QThread>
 #include <QRandomGenerator>
 #include <QtSerialPort/QSerialPort>
-#include <QtEndian>
 #include <queue>
 #include <map>
 #include <enet/enet.h>
@@ -179,7 +178,7 @@ void IRENetOpen(void* userdata)
             QString hostIP = cfg.GetQString("IR.Network.HostIP");
             int hostPort = cfg.GetInt("IR.Network.HostPort");
             QHostAddress hostAddress(hostIP);
-            quint32 addressHex = qFromBigEndian(hostAddress.toIPv4Address());
+            quint32 addressHex = hostAddress.toIPv4Address();
 
             ENetAddress address;
             address.host = addressHex;

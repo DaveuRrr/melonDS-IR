@@ -175,13 +175,11 @@ void IRENetOpen(void* userdata)
 
         if (!state->peer)
         {
-            QString hostIP = cfg.GetQString("IR.Network.HostIP");
+            QByteArray hostIP = cfg.GetQString("IR.Network.HostIP").toUtf8();
             int hostPort = cfg.GetInt("IR.Network.HostPort");
-            QHostAddress hostAddress(hostIP);
-            quint32 addressHex = hostAddress.toIPv4Address();
 
             ENetAddress address;
-            address.host = addressHex;
+            enet_address_set_host(&address, hostIP.constData());
             address.port = hostPort;
             if (instanceID > 0)
             {

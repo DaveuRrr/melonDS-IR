@@ -80,8 +80,11 @@ IRSettingsDialog::IRSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui
 
     // Load TCP settings
     ui->boxHostIP->setText(cfg.GetQString("IR.Network.HostIP"));
-    ui->boxSelfPort->setValue(cfg.GetInt("IR.Network.SelfPort"));
-    ui->txtHostPort->setValue(cfg.GetInt("IR.Network.HostPort"));
+    int selfPort = cfg.GetInt("IR.Network.SelfPort");
+    int hostPort = cfg.GetInt("IR.Network.HostPort");
+    ui->boxSelfPort->setValue(selfPort == 0 ? 8081 : selfPort);
+    ui->txtHostPort->setValue(hostPort == 0 ? 8081 : hostPort);
+
     bool isServer = cfg.GetBool("IR.Network.IsServer");
     if (isServer) ui->rb_NetworkServer->setChecked(true);
     else ui->rb_NetworkClient->setChecked(true);

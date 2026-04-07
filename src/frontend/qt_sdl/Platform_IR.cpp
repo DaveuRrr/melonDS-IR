@@ -478,7 +478,7 @@ void IRSerialOpenPort(void* userdata)
 
         if (!serial->open(QIODevice::ReadWrite)) 
         {   
-            Log(LogLevel::Error, "Failed to open serial port %1: %2\n", portPath.toUtf8().constData(), serial->errorString());
+            Log(LogLevel::Error, "Failed to open serial port %1: %2\n", portPath.toUtf8().constData(), serial->errorString().toUtf8().constData());
         }
         else {
             // Configure port settings AFTER opening
@@ -512,9 +512,9 @@ u8 IRSendPacketSerial(char* data, int len, void* userdata)
 
     qint64 bytesWritten = serial->write(data, len);
 
-    if (bytesWritten < 0) 
+    if (bytesWritten < 0)
     {
-        Log(LogLevel::Error, "Serial read error: %1\n", serial->errorString().toUtf8().constData());
+        Log(LogLevel::Error, "Serial write error: %s\n", serial->errorString().toUtf8().constData());
         return 0;
     }
 
@@ -540,9 +540,9 @@ u8 IRReceivePacketSerial(char* data, int len,void* userdata)
 
     qint64 bytesRead = serial->read(data, len);
 
-    if (bytesRead < 0) 
+    if (bytesRead < 0)
     {
-        Log(LogLevel::Error, "Serial read error: %1\n", serial->errorString().toUtf8().constData());
+        Log(LogLevel::Error, "Serial read error: %s\n", serial->errorString().toUtf8().constData());
         return 0;
     }
 

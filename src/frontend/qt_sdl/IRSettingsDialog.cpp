@@ -34,7 +34,6 @@ IRSettingsDialog* IRSettingsDialog::currentDlg = nullptr;
 
 bool IRSettingsDialog::needsReset = false;
 
-void NetInit();
 using namespace melonDS::Platform;
 using namespace melonDS;
 

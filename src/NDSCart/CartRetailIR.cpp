@@ -57,7 +57,7 @@ CartRetailIR::~CartRetailIR() = default;
 void CartRetailIR::Reset()
 {
     CartRetail::Reset();
-
+    Platform::IRClose();
     IRCmd = 0;
 }
 
@@ -153,7 +153,7 @@ u8 CartRetailIR::ReadIR()
         pointer = pointer + len;
 
         // keep trying to Rx until 3500us has passed
-        while ((Platform::GetUSCount() - lastRxTime) < 3500) // Maybe this can be fine tuned
+        while ((Platform::GetUSCount() - lastRxTime) < 3500)
         {
             len = Platform::IRReceivePacket(tempBuf, sizeof(tempBuf), UserData);
             if (len <= 0) continue;
@@ -162,6 +162,7 @@ u8 CartRetailIR::ReadIR()
                 lastRxTime = Platform::GetUSCount();
                 for (int i = 0; i < len; i++) RxBuf[pointer + i] = tempBuf[i];
                 pointer = pointer + len;
+                break;
             }
         }
     }
@@ -183,7 +184,7 @@ u8 CartRetailIR::ReadIR()
 u8 CartRetailIR::SendIR(u8 len)
 {
     int sent;
-    // Immediate disconnect. This packet needs to WAIT or else it will be piggybacked onto the latest packet (on the walker's end)
+    // Immediate disconnect. This packet needs to WAIT or else it will be piggybacked onto the latest packet (on the pokewalker's end)
     if ((u8)TxBuf[0] == 94) Platform::Sleep(10000);
 
     sent = Platform::IRSendPacket(TxBuf, len, UserData);

@@ -488,7 +488,13 @@ u8 IRSendPacket(char* data, int len, void* userdata);
  */
 u8 IRReceivePacket(char* data, int len, void* userdata);
 
+/**
+ * Close All or Any Open IR connections
+ */
+void IRClose();
+
 }
 }
+
 #endif // PLATFORM_H
 

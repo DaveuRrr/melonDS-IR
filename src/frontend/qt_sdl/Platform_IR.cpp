@@ -43,7 +43,7 @@ enum IRMode
 
 
 /******************************************************************************
- * IR ENet (UDP-based networking for Desktop-to-Desktop)
+ * UDP Socket (ENet for Desktop to Desktop)
 ******************************************************************************/
 void IRENetInit()
 {
@@ -606,6 +606,13 @@ u8 IRReceivePacket(char* data, int len, void* userdata)
         case IR_ENET: return IRReceivePacketENet(data, len, userdata);
         default: return IR_DEFAULT;
     }
+}
+
+void IRClose()
+{
+    IRENetDeinit();
+    IRSocketClose();
+    IRSerialClosePort();
 }
 
 }

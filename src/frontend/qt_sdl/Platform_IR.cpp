@@ -19,16 +19,16 @@
 namespace melonDS::Platform
 {
 
-QSerialPort *serial = nullptr;
-QTcpServer *server = nullptr;
-QTcpSocket *sock = nullptr;
-QMutex networkMutex;
+QSerialPort* Serial = nullptr;
+QTcpServer* Server = nullptr;
+QTcpSocket* Sock = nullptr;
+QMutex NetworkMutex;
 
 struct ENetState {
-    ENetHost* host = nullptr;
-    ENetPeer* peer = nullptr;
-    std::queue<ENetPacket*> rxQueue;
-    QMutex mutex;
+    ENetHost* Host = nullptr;
+    ENetPeer* Peer = nullptr;
+    std::queue<ENetPacket*> RxQueue;
+    QMutex Mutex;
 };
 std::map<int, ENetState*> enetStates;
 bool enetInited = false;
@@ -67,22 +67,22 @@ void IRENetDeinit()
     {
         ENetState* state = pair.second;
 
-        if (state->peer)
+        if (state->Peer)
         {
-            enet_peer_disconnect_now(state->peer, 0);
-            state->peer = nullptr;
+            enet_peer_disconnect_now(state->Peer, 0);
+            state->Peer = nullptr;
         }
 
-        if (state->host)
+        if (state->Host)
         {
-            enet_host_destroy(state->host);
-            state->host = nullptr;
+            enet_host_destroy(state->Host);
+            state->Host = nullptr;
         }
 
-        while (!state->rxQueue.empty())
+        while (!state->RxQueue.empty())
         {
-            enet_packet_destroy(state->rxQueue.front());
-            state->rxQueue.pop();
+            enet_packet_destroy(state->RxQueue.front());
+            state->RxQueue.pop();
         }
 
         delete state;
@@ -98,12 +98,11 @@ void IRENetOpen(void* userdata)
 {
     IRENetInit();
 
-    bool isServer;
     EmuInstance* inst = (EmuInstance*)userdata;
     int instanceID = inst->getInstanceID();
     auto& cfg = inst->getLocalConfig();
     int irMode = cfg.GetInt("IR.Mode");
-    isServer = cfg.GetBool("IR.Network.IsServer");
+    bool isServer = cfg.GetBool("IR.Network.IsServer");
 
     if (instanceID > 0) irMode = IR_DEFAULT;
     if (irMode == IR_DEFAULT) isServer = (instanceID == 0);
@@ -113,12 +112,12 @@ void IRENetOpen(void* userdata)
         enetStates[instanceID] = new ENetState();
     }
     ENetState* state = enetStates[instanceID];
-    QMutexLocker locker(&state->mutex);
+    QMutexLocker locker(&state->Mutex);
 
     if (isServer)
     {
         // SERVER MODE
-        if (!state->host)
+        if (!state->Host)
         {
             int serverPort = cfg.GetInt("IR.Network.SelfPort");
             ENetAddress address;
@@ -126,9 +125,9 @@ void IRENetOpen(void* userdata)
             address.port = serverPort;
             if (irMode == IR_DEFAULT) address.port = 7065;
 
-            state->host = enet_host_create(&address, 16, 2, 0, 0);
+            state->Host = enet_host_create(&address, 16, 2, 0, 0);
 
-            if (!state->host)
+            if (!state->Host)
             {
                 Log(LogLevel::Error, "ENet server creation failed on port %d\n", address.port);
                 return;
@@ -139,32 +138,32 @@ void IRENetOpen(void* userdata)
 
         // Process events (accept connections, receive packets)
         ENetEvent event;
-        while (enet_host_service(state->host, &event, 0) > 0)
+        while (enet_host_service(state->Host, &event, 0) > 0)
         {
             if (event.type == ENET_EVENT_TYPE_CONNECT)
             {
-                state->peer = event.peer;
+                state->Peer = event.peer;
                 Log(LogLevel::Info, "ENet peer connected\n");
             }
             else if (event.type == ENET_EVENT_TYPE_DISCONNECT)
             {
-                if (state->peer == event.peer) state->peer = nullptr;
+                if (state->Peer == event.peer) state->Peer = nullptr;
                 Log(LogLevel::Info, "ENet peer disconnected\n");
             }
             else if (event.type == ENET_EVENT_TYPE_RECEIVE)
             {
-                state->rxQueue.push(event.packet);
+                state->RxQueue.push(event.packet);
             }
         }
     }
     else
     {
         // CLIENT MODE
-        if (!state->host)
+        if (!state->Host)
         {
-            state->host = enet_host_create(nullptr, 16, 2, 0, 0);
+            state->Host = enet_host_create(nullptr, 16, 2, 0, 0);
 
-            if (!state->host)
+            if (!state->Host)
             {
                 Log(LogLevel::Error, "ENet client creation failed\n");
                 return;
@@ -173,7 +172,7 @@ void IRENetOpen(void* userdata)
             Log(LogLevel::Info, "ENet client created\n");
         }
 
-        if (!state->peer)
+        if (!state->Peer)
         {
             QByteArray hostIP = cfg.GetQString("IR.Network.HostIP").toUtf8();
             int hostPort = cfg.GetInt("IR.Network.HostPort");
@@ -187,14 +186,14 @@ void IRENetOpen(void* userdata)
                 address.port = 7065;
             }
 
-            state->peer = enet_host_connect(state->host, &address, 2, 0);
+            state->Peer = enet_host_connect(state->Host, &address, 2, 0);
 
-            if (state->peer) Log(LogLevel::Info, "ENet connecting to %d:%d\n", address.host, address.port);
+            if (state->Peer) Log(LogLevel::Info, "ENet connecting to %d:%d\n", address.host, address.port);
         }
 
         // Process events (connection, disconnection, receive)
         ENetEvent event;
-        while (enet_host_service(state->host, &event, 0) > 0)
+        while (enet_host_service(state->Host, &event, 0) > 0)
         {
             if (event.type == ENET_EVENT_TYPE_CONNECT)
             {
@@ -202,12 +201,12 @@ void IRENetOpen(void* userdata)
             }
             else if (event.type == ENET_EVENT_TYPE_DISCONNECT)
             {
-                state->peer = nullptr;
+                state->Peer = nullptr;
                 Log(LogLevel::Info, "ENet disconnected\n");
             }
             else if (event.type == ENET_EVENT_TYPE_RECEIVE)
             {
-                state->rxQueue.push(event.packet);
+                state->RxQueue.push(event.packet);
             }
         }
     }
@@ -223,20 +222,20 @@ u8 IRSendPacketENet(char* data, int len, void* userdata)
     if (enetStates.find(instanceID) == enetStates.end()) return 0;
     ENetState* state = enetStates[instanceID];
 
-    QMutexLocker locker(&state->mutex);
+    QMutexLocker locker(&state->Mutex);
 
-    if (!state->peer || !state->host) return 0;
+    if (!state->Peer || !state->Host) return 0;
 
     ENetPacket* packet = enet_packet_create(data, len, ENET_PACKET_FLAG_UNSEQUENCED);
     if (!packet) return 0;
 
-    if (enet_peer_send(state->peer, 0, packet) < 0)
+    if (enet_peer_send(state->Peer, 0, packet) < 0)
     {
         enet_packet_destroy(packet);
         return 0;
     }
 
-    enet_host_flush(state->host);
+    enet_host_flush(state->Host);
 
     char stringBuffer[512];
     int offset = 0;
@@ -259,13 +258,13 @@ u8 IRReceivePacketENet(char* data, int len, void* userdata)
     if (enetStates.find(instanceID) == enetStates.end()) return 0;
     ENetState* state = enetStates[instanceID];
 
-    QMutexLocker locker(&state->mutex);
+    QMutexLocker locker(&state->Mutex);
 
-    if (!state->host) return 0;
-    if (state->rxQueue.empty()) return 0;
+    if (!state->Host) return 0;
+    if (state->RxQueue.empty()) return 0;
 
-    ENetPacket* packet = state->rxQueue.front();
-    state->rxQueue.pop();
+    ENetPacket* packet = state->RxQueue.front();
+    state->RxQueue.pop();
 
     int bytesRead = (packet->dataLength < (size_t)len) ? packet->dataLength : len;
     memcpy(data, packet->data, bytesRead);
@@ -291,22 +290,22 @@ u8 IRReceivePacketENet(char* data, int len, void* userdata)
 ******************************************************************************/
 void IRSocketClose()
 {
-    QMutexLocker locker(&networkMutex);
-    if (sock)
+    QMutexLocker locker(&NetworkMutex);
+    if (Sock)
     {
-        delete sock;
-        sock = nullptr;
+        delete Sock;
+        Sock = nullptr;
     }
-    if (server)
+    if (Server)
     {
-        delete server;
-        server = nullptr;
+        delete Server;
+        Server = nullptr;
     }
 }
 
 void IRSocketOpen(void* userdata)
 {
-    QMutexLocker locker(&networkMutex);
+    QMutexLocker locker(&NetworkMutex);
 
     EmuInstance* inst = (EmuInstance*)userdata;
     auto& cfg = inst->getLocalConfig();
@@ -317,56 +316,56 @@ void IRSocketOpen(void* userdata)
     if (isServer)
     {
         // SERVER MODE: Create server if needed
-        if (!server)
+        if (!Server)
         {
-            server = new QTcpServer();
+            Server = new QTcpServer();
             int serverPort = cfg.GetInt("IR.Network.SelfPort");
-            if (!server->listen(QHostAddress::Any, serverPort))
+            if (!Server->listen(QHostAddress::Any, serverPort))
             {
                 Log(LogLevel::Error, "Failed to start TCP server on port %d\n", serverPort);
-                delete server;
-                server = nullptr;
+                delete Server;
+                Server = nullptr;
                 return;
             }
             Log(LogLevel::Info, "TCP server listening on port %d\n", serverPort);
         }
 
         // Check for disconnected client
-        if (sock && sock->state() != QAbstractSocket::ConnectedState)
+        if (Sock && Sock->state() != QAbstractSocket::ConnectedState)
         {
-            delete sock;
-            sock = nullptr;
+            delete Sock;
+            Sock = nullptr;
             Log(LogLevel::Info, "Client disconnected\n");
         }
 
         // Accept new client if available
-        if (!sock && server->hasPendingConnections())
+        if (!Sock && Server->hasPendingConnections())
         {
             QCoreApplication::processEvents();
-            sock = server->nextPendingConnection();
-            Log(LogLevel::Info, "Client connected from %s\n", sock->peerAddress().toString().toUtf8().constData());
+            Sock = Server->nextPendingConnection();
+            Log(LogLevel::Info, "Client connected from %s\n", Sock->peerAddress().toString().toUtf8().constData());
         }
     }
     else
     {
         // CLIENT MODE: Connect to remote server
-        if (!sock)
+        if (!Sock)
         {
             QString hostIP = cfg.GetQString("IR.Network.HostIP");
             int hostPort = cfg.GetInt("IR.Network.HostPort");
 
-            sock = new QTcpSocket();
-            sock->connectToHost(hostIP, hostPort);
+            Sock = new QTcpSocket();
+            Sock->connectToHost(hostIP, hostPort);
 
             Log(LogLevel::Info, "TCP client connecting to %s:%d\n", hostIP.toUtf8().constData(), hostPort);
 
-            if (sock->waitForConnected(10)) Log(LogLevel::Info, "Connected to %s:%d\n", hostIP.toUtf8().constData(), hostPort);
+            if (Sock->waitForConnected(10)) Log(LogLevel::Info, "Connected to %s:%d\n", hostIP.toUtf8().constData(), hostPort);
 
         }
-        else if (sock->state() != QAbstractSocket::ConnectedState)
+        else if (Sock->state() != QAbstractSocket::ConnectedState)
         {
-            delete sock;
-            sock = nullptr;
+            delete Sock;
+            Sock = nullptr;
             Log(LogLevel::Info, "Disconnected from server\n");
         }
     }
@@ -377,12 +376,12 @@ u8 IRSendPacketTCP(char* data, int len, void* userdata)
     QCoreApplication::processEvents();
     IRSocketOpen(userdata);
 
-    QMutexLocker locker(&networkMutex);
+    QMutexLocker locker(&NetworkMutex);
 
-    if (!sock || sock->state() != QAbstractSocket::ConnectedState) return 0;
+    if (!Sock || Sock->state() != QAbstractSocket::ConnectedState) return 0;
 
-    qint64 bytesWritten = sock->write(data, len);
-    sock->flush();
+    qint64 bytesWritten = Sock->write(data, len);
+    Sock->flush();
 
     if (bytesWritten > 0)
     {
@@ -403,11 +402,11 @@ u8 IRReceivePacketTCP(char* data, int len, void* userdata)
     QCoreApplication::processEvents();
     IRSocketOpen(userdata);
 
-    QMutexLocker locker(&networkMutex);
+    QMutexLocker locker(&NetworkMutex);
 
-    if (!sock || sock->bytesAvailable() <= 0) return 0;
+    if (!Sock || Sock->bytesAvailable() <= 0) return 0;
 
-    qint64 bytesRead = sock->read(data, len);
+    qint64 bytesRead = Sock->read(data, len);
 
     if (bytesRead > 0)
     {
@@ -429,10 +428,10 @@ u8 IRReceivePacketTCP(char* data, int len, void* userdata)
 ******************************************************************************/
 bool IRSerial()
 {
-    if (!serial || !serial->isOpen()) return false;
+    if (!Serial || !Serial->isOpen()) return false;
 
-    // Check for serial port errors that indicate disconnection
-    QSerialPort::SerialPortError error = serial->error();
+    // Check for Serial port errors that indicate disconnection
+    QSerialPort::SerialPortError error = Serial->error();
     if (error == QSerialPort::ResourceError ||
         error == QSerialPort::PermissionError ||
         error == QSerialPort::DeviceNotFoundError) 
@@ -445,12 +444,12 @@ bool IRSerial()
 
 void IRSerialClosePort()
 {
-    if (serial) 
+    if (Serial) 
     {
-        if (serial->isOpen()) serial->close();
+        if (Serial->isOpen()) Serial->close();
         printf("Serial port closed\n");
-        delete serial;
-        serial = nullptr;
+        delete Serial;
+        Serial = nullptr;
     }
 }
 
@@ -458,12 +457,12 @@ void IRSerialOpenPort(void* userdata)
 {
     if (!IRSerial()) IRSerialClosePort();
 
-    if (!serial)
+    if (!Serial)
     {
         EmuInstance* inst = (EmuInstance*)userdata;
         auto& cfg = inst->getLocalConfig();
         QString portPath = cfg.GetQString("IR.SerialPortPath");
-        serial = new QSerialPort();
+        Serial = new QSerialPort();
         // Windows: COM ports above COM9 need \\.\COMxx format
         #ifdef _WIN32
         if (portPath.startsWith("COM", Qt::CaseInsensitive))
@@ -473,26 +472,26 @@ void IRSerialOpenPort(void* userdata)
         }
         #endif
 
-        serial->setPortName(portPath);
-        Log(LogLevel::Info, "Attempting to open serial port: %s\n", portPath.toUtf8().constData());
+        Serial->setPortName(portPath);
+        Log(LogLevel::Info, "Attempting to open Serial port: %s\n", portPath.toUtf8().constData());
 
-        if (!serial->open(QIODevice::ReadWrite)) 
+        if (!Serial->open(QIODevice::ReadWrite)) 
         {   
-            Log(LogLevel::Error, "Failed to open serial port %1: %2\n", portPath.toUtf8().constData(), serial->errorString().toUtf8().constData());
+            Log(LogLevel::Error, "Failed to open Serial port %s: %s\n", portPath.toUtf8().constData(), Serial->errorString().toUtf8().constData());
         }
         else {
             // Configure port settings AFTER opening
-            serial->setBaudRate(QSerialPort::Baud115200);
-            serial->setDataBits(QSerialPort::Data8);
-            serial->setParity(QSerialPort::NoParity);
-            serial->setStopBits(QSerialPort::OneStop);
-            serial->setFlowControl(QSerialPort::NoFlowControl);
+            Serial->setBaudRate(QSerialPort::Baud115200);
+            Serial->setDataBits(QSerialPort::Data8);
+            Serial->setParity(QSerialPort::NoParity);
+            Serial->setStopBits(QSerialPort::OneStop);
+            Serial->setFlowControl(QSerialPort::NoFlowControl);
 
             // Explicitly set DTR and RTS high for device stability
-            serial->setDataTerminalReady(true);
-            // serial->setRequestToSend(true);
-            serial->clear();
-            Log(LogLevel::Info, "Serial port opened successfully: %1 (115200 8N1, DTR=1, RTS=0)\n", portPath.toUtf8().constData());
+            Serial->setDataTerminalReady(true);
+            // Serial->setRequestToSend(true);
+            Serial->clear();
+            Log(LogLevel::Info, "Serial port opened successfully: %s (115200 8N1, DTR=1, RTS=0)\n", portPath.toUtf8().constData());
         }
     }
     
@@ -504,21 +503,21 @@ u8 IRSendPacketSerial(char* data, int len, void* userdata)
     QCoreApplication::processEvents();
     IRSerialOpenPort(userdata);
 
-    if (!serial || !serial->isOpen()) 
+    if (!Serial || !Serial->isOpen()) 
     {
         Log(LogLevel::Error, "Serial write failed: port not open\n");
         return 0;
     }
 
-    qint64 bytesWritten = serial->write(data, len);
+    qint64 bytesWritten = Serial->write(data, len);
 
     if (bytesWritten < 0)
     {
-        Log(LogLevel::Error, "Serial write error: %s\n", serial->errorString().toUtf8().constData());
+        Log(LogLevel::Error, "Serial write error: %s\n", Serial->errorString().toUtf8().constData());
         return 0;
     }
 
-    serial->flush();
+    Serial->flush();
 
     char stringBuffer[512];
     int offset = 0;
@@ -536,13 +535,13 @@ u8 IRReceivePacketSerial(char* data, int len,void* userdata)
     IRSerialOpenPort(userdata);
 
 
-    if (!serial || !serial->isOpen() || !serial->bytesAvailable()) return 0;
+    if (!Serial || !Serial->isOpen() || !Serial->bytesAvailable()) return 0;
 
-    qint64 bytesRead = serial->read(data, len);
+    qint64 bytesRead = Serial->read(data, len);
 
     if (bytesRead < 0)
     {
-        Log(LogLevel::Error, "Serial read error: %s\n", serial->errorString().toUtf8().constData());
+        Log(LogLevel::Error, "Serial read error: %s\n", Serial->errorString().toUtf8().constData());
         return 0;
     }
 

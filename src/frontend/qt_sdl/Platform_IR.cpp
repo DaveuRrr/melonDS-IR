@@ -33,6 +33,12 @@ struct ENetState {
 std::map<int, ENetState*> enetStates;
 bool enetInited = false;
 
+struct IRLocalQueue {
+    std::queue<std::vector<u8>> Queue;
+    QMutex Mutex;
+};
+static IRLocalQueue irLocalQueues[2];
+
 enum IRMode
 {
     IR_DEFAULT = 0,
@@ -41,13 +47,65 @@ enum IRMode
     IR_ENET = 3,
 };
 
+static std::string IRBytesToString(const char* data, int len)
+{
+    char buf[512];
+    int offset = 0;
+    for (int i = 0; i < len && i < 32 && offset < (int)sizeof(buf) - 3; ++i)
+        offset += snprintf(buf + offset, sizeof(buf) - offset, "%02X ", (unsigned char)data[i]);
+    return std::string(buf, offset);
+}
 
 /******************************************************************************
- * UDP Socket (ENet for Desktop to Desktop)
+ * IR Local Instances
+******************************************************************************/
+u8 IRSendPacketLocal(char* data, int len, void* userdata)
+{
+    EmuInstance* inst = (EmuInstance*)userdata;
+    int instanceID = inst->getInstanceID();
+    int destID = 1 - instanceID;  // 0->1, 1->0
+
+    if (destID < 0 || destID > 1) return 0;
+
+    QMutexLocker locker(&irLocalQueues[destID].Mutex);
+    irLocalQueues[destID].Queue.push(std::vector<u8>((u8*)data, (u8*)data + len));
+
+    Log(LogLevel::Info, "ID %d Local Sent %d bytes: %s\n", instanceID, len, IRBytesToString(data, len).c_str());
+    return static_cast<u8>(len);
+}
+
+u8 IRReceivePacketLocal(char* data, int len, void* userdata)
+{
+    EmuInstance* inst = (EmuInstance*)userdata;
+    int instanceID = inst->getInstanceID();
+
+    if (instanceID < 0 || instanceID > 1) return 0;
+
+    QMutexLocker locker(&irLocalQueues[instanceID].Mutex);
+    if (irLocalQueues[instanceID].Queue.empty()) return 0;
+
+    auto& packet = irLocalQueues[instanceID].Queue.front();
+    int bytesRead = std::min((int)packet.size(), len);
+    memcpy(data, packet.data(), bytesRead);
+    irLocalQueues[instanceID].Queue.pop();
+
+    Log(LogLevel::Info, "ID %d Local Received %d bytes: %s\n", instanceID, bytesRead, IRBytesToString(data, len).c_str());
+    return static_cast<u8>(bytesRead);
+}
+
+/******************************************************************************
+ * IR UDP Socket
 ******************************************************************************/
 void IRENetInit()
 {
     if (enetInited) return;
+
+    if (MPInterface::GetType() == MPInterface_LAN)
+    {
+        enetInited = true;
+        Log(LogLevel::Info, "ENet already initialized by LAN\n");
+        return;
+    }
 
     if (enet_initialize() != 0)
     {
@@ -89,9 +147,12 @@ void IRENetDeinit()
     }
 
     enetStates.clear();
-    enet_deinitialize();
-    enetInited = false;
-    Log(LogLevel::Info, "ENet deinitialized\n");
+    if (MPInterface::GetType() != MPInterface_LAN)
+    {
+        enet_deinitialize();
+        Log(LogLevel::Info, "ENet deinitialized\n");
+        enetInited = false;
+    }
 }
 
 void IRENetOpen(void* userdata)
@@ -108,67 +169,39 @@ void IRENetOpen(void* userdata)
     if (irMode == IR_DEFAULT) isServer = (instanceID == 0);
 
     if (enetStates.find(instanceID) == enetStates.end())
-    {
         enetStates[instanceID] = new ENetState();
-    }
+
     ENetState* state = enetStates[instanceID];
     QMutexLocker locker(&state->Mutex);
 
     if (isServer)
     {
-        // SERVER MODE
         if (!state->Host)
         {
             int serverPort = cfg.GetInt("IR.Network.SelfPort");
             ENetAddress address;
             address.host = ENET_HOST_ANY;
-            address.port = serverPort;
-            if (irMode == IR_DEFAULT) address.port = 7065;
+            address.port = (irMode == IR_DEFAULT) ? 7065 : serverPort;
 
             state->Host = enet_host_create(&address, 16, 2, 0, 0);
-
             if (!state->Host)
             {
                 Log(LogLevel::Error, "ENet server creation failed on port %d\n", address.port);
                 return;
             }
-
             Log(LogLevel::Info, "ENet server on port %d\n", address.port);
-        }
-
-        // Process events (accept connections, receive packets)
-        ENetEvent event;
-        while (enet_host_service(state->Host, &event, 0) > 0)
-        {
-            if (event.type == ENET_EVENT_TYPE_CONNECT)
-            {
-                state->Peer = event.peer;
-                Log(LogLevel::Info, "ENet peer connected\n");
-            }
-            else if (event.type == ENET_EVENT_TYPE_DISCONNECT)
-            {
-                if (state->Peer == event.peer) state->Peer = nullptr;
-                Log(LogLevel::Info, "ENet peer disconnected\n");
-            }
-            else if (event.type == ENET_EVENT_TYPE_RECEIVE)
-            {
-                state->RxQueue.push(event.packet);
-            }
         }
     }
     else
     {
-        // CLIENT MODE
         if (!state->Host)
         {
             state->Host = enet_host_create(nullptr, 16, 2, 0, 0);
-
             if (!state->Host)
             {
                 Log(LogLevel::Error, "ENet client creation failed\n");
                 return;
             }
-
             Log(LogLevel::Info, "ENet client created\n");
         }
 
@@ -187,27 +220,31 @@ void IRENetOpen(void* userdata)
             }
 
             state->Peer = enet_host_connect(state->Host, &address, 2, 0);
-
             if (state->Peer) Log(LogLevel::Info, "ENet connecting to %d:%d\n", address.host, address.port);
         }
+    }
+}
 
-        // Process events (connection, disconnection, receive)
-        ENetEvent event;
-        while (enet_host_service(state->Host, &event, 0) > 0)
+void IRENetProcessEvents(ENetState* state)
+{
+    if (!state->Host) return;
+
+    ENetEvent event;
+    while (enet_host_service(state->Host, &event, 0) > 0)
+    {
+        if (event.type == ENET_EVENT_TYPE_CONNECT)
         {
-            if (event.type == ENET_EVENT_TYPE_CONNECT)
-            {
-                Log(LogLevel::Info, "ENet connected\n");
-            }
-            else if (event.type == ENET_EVENT_TYPE_DISCONNECT)
-            {
-                state->Peer = nullptr;
-                Log(LogLevel::Info, "ENet disconnected\n");
-            }
-            else if (event.type == ENET_EVENT_TYPE_RECEIVE)
-            {
-                state->RxQueue.push(event.packet);
-            }
+            if (!state->Peer) state->Peer = event.peer;
+            Log(LogLevel::Info, "ENet peer connected\n");
+        }
+        else if (event.type == ENET_EVENT_TYPE_DISCONNECT)
+        {
+            if (state->Peer == event.peer) state->Peer = nullptr;
+            Log(LogLevel::Info, "ENet peer disconnected\n");
+        }
+        else if (event.type == ENET_EVENT_TYPE_RECEIVE)
+        {
+            state->RxQueue.push(event.packet);
         }
     }
 }
@@ -224,6 +261,8 @@ u8 IRSendPacketENet(char* data, int len, void* userdata)
 
     QMutexLocker locker(&state->Mutex);
 
+    IRENetProcessEvents(state);
+
     if (!state->Peer || !state->Host) return 0;
 
     ENetPacket* packet = enet_packet_create(data, len, ENET_PACKET_FLAG_UNSEQUENCED);
@@ -237,13 +276,7 @@ u8 IRSendPacketENet(char* data, int len, void* userdata)
 
     enet_host_flush(state->Host);
 
-    char stringBuffer[512];
-    int offset = 0;
-    for (int i = 0; i < len && i < 32; ++i)
-    {
-        offset += snprintf(stringBuffer + offset, sizeof(stringBuffer) - offset, "%02X ", static_cast<unsigned char>(data[i]));
-    }
-    Log(LogLevel::Info, "ID %d Sent %d bytes: %s\n", instanceID, len, stringBuffer);
+    Log(LogLevel::Info, "ID %d Sent %d bytes: %s\n", instanceID, len, IRBytesToString(data, len).c_str());
 
     return static_cast<u8>(len);
 }
@@ -260,7 +293,8 @@ u8 IRReceivePacketENet(char* data, int len, void* userdata)
 
     QMutexLocker locker(&state->Mutex);
 
-    if (!state->Host) return 0;
+    IRENetProcessEvents(state);
+
     if (state->RxQueue.empty()) return 0;
 
     ENetPacket* packet = state->RxQueue.front();
@@ -269,16 +303,7 @@ u8 IRReceivePacketENet(char* data, int len, void* userdata)
     int bytesRead = (packet->dataLength < (size_t)len) ? packet->dataLength : len;
     memcpy(data, packet->data, bytesRead);
 
-    if (bytesRead > 0)
-    {
-        char stringBuffer[512];
-        int offset = 0;
-        for (int i = 0; i < bytesRead && i < 32; ++i)
-        {
-            offset += snprintf(stringBuffer + offset, sizeof(stringBuffer) - offset, "%02X ", static_cast<unsigned char>(data[i]));
-        }
-        Log(LogLevel::Info, "ID %d Received %d bytes: %s\n", instanceID, bytesRead, stringBuffer);
-    }
+    Log(LogLevel::Info, "ID %d Received %d bytes: %s\n", instanceID, bytesRead, IRBytesToString(data, bytesRead).c_str());
 
     enet_packet_destroy(packet);
 
@@ -385,13 +410,7 @@ u8 IRSendPacketTCP(char* data, int len, void* userdata)
 
     if (bytesWritten > 0)
     {
-        char stringBuffer[512];
-        int offset = 0;
-        for (int i = 0; i < bytesWritten && i < 32; ++i)
-        {
-            offset += snprintf(stringBuffer + offset, sizeof(stringBuffer) - offset, "%02X ", static_cast<unsigned char>(data[i]));
-        }
-        Log(LogLevel::Info, "Sent %d bytes: %s\n", bytesWritten, stringBuffer);
+        Log(LogLevel::Info, "Sent %d bytes: %s\n", bytesWritten, IRBytesToString(data, len).c_str());
     }
 
     return static_cast<u8>(bytesWritten);
@@ -410,13 +429,7 @@ u8 IRReceivePacketTCP(char* data, int len, void* userdata)
 
     if (bytesRead > 0)
     {
-        char stringBuffer[512];
-        int offset = 0;
-        for (int i = 0; i < bytesRead && i < 32; ++i)
-        {
-            offset += snprintf(stringBuffer + offset, sizeof(stringBuffer) - offset, "%02X ", static_cast<unsigned char>(data[i]));
-        }
-        Log(LogLevel::Info, "Received %d bytes: %s\n", bytesRead, stringBuffer);
+        Log(LogLevel::Info, "Received %d bytes: %s\n", bytesRead, IRBytesToString(data, bytesRead).c_str());
     }
 
     return static_cast<u8>(bytesRead);
@@ -519,13 +532,7 @@ u8 IRSendPacketSerial(char* data, int len, void* userdata)
 
     Serial->flush();
 
-    char stringBuffer[512];
-    int offset = 0;
-    for (int i = 0; i < bytesWritten; ++i)
-    {
-        offset += snprintf(stringBuffer + offset, sizeof(stringBuffer) - offset, "%02X", static_cast<unsigned char>(data[i]));
-    }
-    Log(LogLevel::Info, "Serial Write %lld bytes: %s\n", bytesWritten, stringBuffer);
+    Log(LogLevel::Info, "Serial Write %lld bytes: %s\n", bytesWritten, IRBytesToString(data, len).c_str());
     return static_cast<u8>(bytesWritten);
 }
 
@@ -545,14 +552,7 @@ u8 IRReceivePacketSerial(char* data, int len,void* userdata)
         return 0;
     }
 
-    char stringBuffer[512];
-    int offset = 0;
-    for (int i = 0; i < bytesRead; ++i)
-    {
-        offset += snprintf(stringBuffer + offset, sizeof(stringBuffer) - offset,
-                           "%02X", static_cast<unsigned char>(data[i]));
-    }
-    Log(LogLevel::Info, "Serial Read %lld bytes: %s\n", bytesRead, stringBuffer);
+    Log(LogLevel::Info, "Serial Read %lld bytes: %s\n", bytesRead, IRBytesToString(data, bytesRead).c_str());
     return static_cast<u8>(bytesRead);
 }
 
@@ -575,7 +575,7 @@ u8 IRSendPacket(char* data, int len, void* userdata)
 
     switch(irMode)
     {
-        case IR_DEFAULT: return IRSendPacketENet(data, len, userdata);
+        case IR_DEFAULT: return IRSendPacketLocal(data, len, userdata); //return IRSendPacketENet(data, len, userdata);
         case IR_SERIAL: return IRSendPacketSerial(data, len, userdata);
         case IR_TCP: return IRSendPacketTCP(data, len, userdata);
         case IR_ENET: return IRSendPacketENet(data, len, userdata);
@@ -599,7 +599,7 @@ u8 IRReceivePacket(char* data, int len, void* userdata)
 
     switch(irMode)
     {
-        case IR_DEFAULT: return IRReceivePacketENet(data, len, userdata);
+        case IR_DEFAULT: return IRReceivePacketLocal(data, len, userdata); //return IRReceivePacketENet(data, len, userdata);
         case IR_SERIAL: return IRReceivePacketSerial(data, len, userdata);
         case IR_TCP: return IRReceivePacketTCP(data, len, userdata);
         case IR_ENET: return IRReceivePacketENet(data, len, userdata);

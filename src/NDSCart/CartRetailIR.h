@@ -37,6 +37,7 @@ public:
     void DoSavestate(Savestate* file) override;
 
     void SPISelect() override;
+    void SPIRelease() override;
     u8 SPITransmitReceive(u8 val) override;
 
 private:
@@ -44,10 +45,9 @@ private:
     u8 IRCmd = 0;
     u32 IRPos = 0;
 
-    // Ceravia's IR communication buffers and methods
-    u8 recvLen = 0;
-    char TxBuf[0xB8];
-    char RxBuf[0xB8];
+    // Half confirmed 136 bytes
+    char TxBuf[0x88];
+    char RxBuf[0x88];
 
     // These two functions are slightly abstracted for platform IR communication
     u8 SendIR(u8 len);

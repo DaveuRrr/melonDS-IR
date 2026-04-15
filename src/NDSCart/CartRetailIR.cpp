@@ -85,6 +85,7 @@ void CartRetailIR::SPIRelease()
     {
         u8 sendLen = IRPos - 1; // IRPos includes the command byte
         SendIR(sendLen);
+        memset(TxBuf, 0, sizeof(TxBuf));
     }
     // if (IRCmd == 0x01 && IRPos > 1)
     // {
@@ -93,8 +94,6 @@ void CartRetailIR::SPIRelease()
     //     for (int i = 0; i < dataLen; i++) Log(LogLevel::Info, " %02X", RxBuf[i]);
     //     Log(LogLevel::Info, "\n");
     // }
-    if (IRCmd == 0x00 && IRPos == 261) Platform::IRClose(); // Pokewalker Completes Communication, Saving...
-    // if (IRCmd == 0x02 && IRPos == 19) Platform::IRClose(); // Pokemon Black & White Completes Communication, WiFi...
 }
 
 u8 CartRetailIR::SPITransmitReceive(u8 val)
@@ -116,7 +115,6 @@ u8 CartRetailIR::SPITransmitReceive(u8 val)
     case 0x01: // Read from IR
         if (IRPos == 1)
         {
-            memset(RxBuf, 0, sizeof(RxBuf));
             // Initiates the Read. A whole packet will be grabbed by the frontend
             // with this call and stored in RxBuf. The return value is the length
             // of the packet and will tell the GAME to keep sending SPI commands.
@@ -152,41 +150,14 @@ u8 CartRetailIR::SPITransmitReceive(u8 val)
 */
 u8 CartRetailIR::ReadIR()
 {
-    int len = Platform::IRReceivePacket(RxBuf, sizeof(RxBuf), UserData);
-    long long lastRxTime = Platform::GetUSCount();
-    u8 pointer = len;
-    if (len > 0)
-    {
-        // If there are more bytes to be recieved, keep trying to recieve
-        while((Platform::GetUSCount() - lastRxTime) < 3500)
-        {
-            len = Platform::IRReceivePacket(RxBuf + pointer, sizeof(RxBuf) - pointer, UserData);
-            if (len > 0)
-            {
-                pointer += len;
-                lastRxTime = Platform::GetUSCount();
-                // break;
-            }
-        }
-    }
-    return pointer;
+    memset(RxBuf, 0, sizeof(RxBuf));
+    return Platform::IRReceivePacket(RxBuf, sizeof(RxBuf), UserData);
 }
 
 // Sends an entire packet to the frontend.
 u8 CartRetailIR::SendIR(u8 len)
 {
-    // Immediate disconnect. This packet needs to WAIT or else it will be piggybacked onto the latest packet (on the pokewalker's end)
-    if ((u8)TxBuf[0] == 94) Platform::Sleep(10000);
-
-    int sent = Platform::IRSendPacket(TxBuf, len, UserData);
-    if (sent < 0) 
-    {
-        Log(LogLevel::Error, "Send IR Error");
-        sent = 0;
-    }
-    memset(TxBuf, 0, sizeof(TxBuf));
-
-    return sent;
+    return Platform::IRSendPacket(TxBuf, len, UserData);
 }
 
 

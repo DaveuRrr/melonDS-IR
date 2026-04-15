@@ -41,8 +41,8 @@ static IRLocalQueue irLocalQueues[2];
 
 enum IRMode
 {
-    IR_DEFAULT = 0,
-    IR_SERIAL = 1,
+    IR_Local = 0,
+    IR_Serial = 1,
     IR_TCP = 2,
     IR_ENET = 3,
 };
@@ -70,7 +70,7 @@ u8 IRSendPacketLocal(char* data, int len, void* userdata)
     QMutexLocker locker(&irLocalQueues[destID].Mutex);
     irLocalQueues[destID].Queue.push(std::vector<u8>((u8*)data, (u8*)data + len));
 
-    Log(LogLevel::Info, "ID %d Local Sent %d bytes: %s\n", instanceID, len, IRBytesToString(data, len).c_str());
+    Log(LogLevel::Info, "ID %d Local Write %d bytes: %s\n", instanceID, len, IRBytesToString(data, len).c_str());
     return static_cast<u8>(len);
 }
 
@@ -89,7 +89,7 @@ u8 IRReceivePacketLocal(char* data, int len, void* userdata)
     memcpy(data, packet.data(), bytesRead);
     irLocalQueues[instanceID].Queue.pop();
 
-    Log(LogLevel::Info, "ID %d Local Received %d bytes: %s\n", instanceID, bytesRead, IRBytesToString(data, len).c_str());
+    Log(LogLevel::Info, "ID %d Local Read %d bytes: %s\n", instanceID, bytesRead, IRBytesToString(data, len).c_str());
     return static_cast<u8>(bytesRead);
 }
 
@@ -165,9 +165,6 @@ void IRENetOpen(void* userdata)
     int irMode = cfg.GetInt("IR.Mode");
     bool isServer = cfg.GetBool("IR.Network.IsServer");
 
-    if (instanceID > 0) irMode = IR_DEFAULT;
-    if (irMode == IR_DEFAULT) isServer = (instanceID == 0);
-
     if (enetStates.find(instanceID) == enetStates.end())
         enetStates[instanceID] = new ENetState();
 
@@ -181,7 +178,7 @@ void IRENetOpen(void* userdata)
             int serverPort = cfg.GetInt("IR.Network.SelfPort");
             ENetAddress address;
             address.host = ENET_HOST_ANY;
-            address.port = (irMode == IR_DEFAULT) ? 7065 : serverPort;
+            address.port = serverPort;
 
             state->Host = enet_host_create(&address, 16, 2, 0, 0);
             if (!state->Host)
@@ -213,11 +210,6 @@ void IRENetOpen(void* userdata)
             ENetAddress address;
             enet_address_set_host(&address, hostIP.constData());
             address.port = hostPort;
-            if (instanceID > 0)
-            {
-                address.host = 0x0100007F;
-                address.port = 7065;
-            }
 
             state->Peer = enet_host_connect(state->Host, &address, 2, 0);
             if (state->Peer) Log(LogLevel::Info, "ENet connecting to %d:%d\n", address.host, address.port);
@@ -276,7 +268,7 @@ u8 IRSendPacketENet(char* data, int len, void* userdata)
 
     enet_host_flush(state->Host);
 
-    Log(LogLevel::Info, "ID %d Sent %d bytes: %s\n", instanceID, len, IRBytesToString(data, len).c_str());
+    Log(LogLevel::Info, "UDP Write %d bytes: %s\n", len, IRBytesToString(data, len).c_str());
 
     return static_cast<u8>(len);
 }
@@ -303,7 +295,7 @@ u8 IRReceivePacketENet(char* data, int len, void* userdata)
     int bytesRead = (packet->dataLength < (size_t)len) ? packet->dataLength : len;
     memcpy(data, packet->data, bytesRead);
 
-    Log(LogLevel::Info, "ID %d Received %d bytes: %s\n", instanceID, bytesRead, IRBytesToString(data, bytesRead).c_str());
+    Log(LogLevel::Info, "UDP Read %d bytes: %s\n", bytesRead, IRBytesToString(data, bytesRead).c_str());
 
     enet_packet_destroy(packet);
 
@@ -335,8 +327,6 @@ void IRSocketOpen(void* userdata)
     EmuInstance* inst = (EmuInstance*)userdata;
     auto& cfg = inst->getLocalConfig();
     bool isServer = cfg.GetBool("IR.Network.IsServer");
-    int instanceID = inst->getInstanceID();
-    if (instanceID > 0) isServer = false;
 
     if (isServer)
     {
@@ -410,7 +400,7 @@ u8 IRSendPacketTCP(char* data, int len, void* userdata)
 
     if (bytesWritten > 0)
     {
-        Log(LogLevel::Info, "Sent %d bytes: %s\n", bytesWritten, IRBytesToString(data, len).c_str());
+        Log(LogLevel::Info, "TCP Write %d bytes: %s\n", bytesWritten, IRBytesToString(data, len).c_str());
     }
 
     return static_cast<u8>(bytesWritten);
@@ -429,7 +419,7 @@ u8 IRReceivePacketTCP(char* data, int len, void* userdata)
 
     if (bytesRead > 0)
     {
-        Log(LogLevel::Info, "Received %d bytes: %s\n", bytesRead, IRBytesToString(data, bytesRead).c_str());
+        Log(LogLevel::Info, "TCP Read %d bytes: %s\n", bytesRead, IRBytesToString(data, bytesRead).c_str());
     }
 
     return static_cast<u8>(bytesRead);
@@ -522,6 +512,8 @@ u8 IRSendPacketSerial(char* data, int len, void* userdata)
         return 0;
     }
 
+    // Immediate disconnect. This packet needs to WAIT or else it will be piggybacked onto the latest packet (on the pokewalker's end)
+    if ((u8)data[0] == 0x5E) Platform::Sleep(10000);
     qint64 bytesWritten = Serial->write(data, len);
 
     if (bytesWritten < 0)
@@ -532,7 +524,7 @@ u8 IRSendPacketSerial(char* data, int len, void* userdata)
 
     Serial->flush();
 
-    Log(LogLevel::Info, "Serial Write %lld bytes: %s\n", bytesWritten, IRBytesToString(data, len).c_str());
+    Log(LogLevel::Info, "Serial Write %d bytes: %s\n", bytesWritten, IRBytesToString(data, len).c_str());
     return static_cast<u8>(bytesWritten);
 }
 
@@ -552,7 +544,7 @@ u8 IRReceivePacketSerial(char* data, int len,void* userdata)
         return 0;
     }
 
-    Log(LogLevel::Info, "Serial Read %lld bytes: %s\n", bytesRead, IRBytesToString(data, bytesRead).c_str());
+    Log(LogLevel::Info, "Serial Read %d bytes: %s\n", bytesRead, IRBytesToString(data, bytesRead).c_str());
     return static_cast<u8>(bytesRead);
 }
 
@@ -566,20 +558,20 @@ u8 IRSendPacket(char* data, int len, void* userdata)
     int irMode = cfg.GetInt("IR.Mode");
 
     int instanceID = inst->getInstanceID();
-    if (instanceID > 0) irMode = IR_DEFAULT;
+    if (instanceID > 0) irMode = IR_Local;
 
     // Log(LogLevel::Info, "ID %d IRSendPacket mode=%d len=%d\n", instanceID, irMode, len);
 
-    if (irMode != IR_SERIAL) IRSerialClosePort();
+    if (irMode != IR_Serial) IRSerialClosePort();
     if (irMode != IR_TCP) IRSocketClose();
 
     switch(irMode)
     {
-        case IR_DEFAULT: return IRSendPacketLocal(data, len, userdata); //return IRSendPacketENet(data, len, userdata);
-        case IR_SERIAL: return IRSendPacketSerial(data, len, userdata);
+        case IR_Local: return IRSendPacketLocal(data, len, userdata);
+        case IR_Serial: return IRSendPacketSerial(data, len, userdata);
         case IR_TCP: return IRSendPacketTCP(data, len, userdata);
         case IR_ENET: return IRSendPacketENet(data, len, userdata);
-        default: return IR_DEFAULT;
+        default: return IR_Local;
     }
 }
 
@@ -590,20 +582,20 @@ u8 IRReceivePacket(char* data, int len, void* userdata)
     int irMode = cfg.GetInt("IR.Mode");
 
     int instanceID = inst->getInstanceID();
-    if (instanceID > 0) irMode = IR_DEFAULT;
+    if (instanceID > 0) irMode = IR_Local;
 
     // Log(LogLevel::Info, "ID %d IRReceivePacket mode=%d len=%d\n", instanceID, irMode, len);
 
-    if (irMode != IR_SERIAL) IRSerialClosePort();
+    if (irMode != IR_Serial) IRSerialClosePort();
     if (irMode != IR_TCP) IRSocketClose();
 
     switch(irMode)
     {
-        case IR_DEFAULT: return IRReceivePacketLocal(data, len, userdata); //return IRReceivePacketENet(data, len, userdata);
-        case IR_SERIAL: return IRReceivePacketSerial(data, len, userdata);
+        case IR_Local: return IRReceivePacketLocal(data, len, userdata);
+        case IR_Serial: return IRReceivePacketSerial(data, len, userdata);
         case IR_TCP: return IRReceivePacketTCP(data, len, userdata);
         case IR_ENET: return IRReceivePacketENet(data, len, userdata);
-        default: return IR_DEFAULT;
+        default: return IR_Local;
     }
 }
 

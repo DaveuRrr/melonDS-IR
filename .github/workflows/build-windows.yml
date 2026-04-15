@@ -43,7 +43,7 @@ jobs:
       with:
         vcpkgJsonGlob: vcpkg.json
     - name: Remove conflicting system packages
-      run: pacman -R --noconfirm mingw-w64-ucrt-x86_64-libarchive || true
+      run: pacman -Rdd --noconfirm mingw-w64-ucrt-x86_64-libarchive || true
     - name: Configure
       run: cmake --preset=release-mingw-x86_64 -DMELONDS_EMBED_BUILD_INFO=ON
     - name: Build

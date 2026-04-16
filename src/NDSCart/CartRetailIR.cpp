@@ -113,24 +113,12 @@ u8 CartRetailIR::SPITransmitReceive(u8 val)
         break;
 
     case 0x01: // Read from IR
-        if (IRPos == 1)
-        {
-            // Initiates the Read. A whole packet will be grabbed by the frontend
-            // with this call and stored in RxBuf. The return value is the length
-            // of the packet and will tell the GAME to keep sending SPI commands.
-            ret = ReadIR();
-        }
-        else
-        {
-            // We start returning actual packet data to the game now
-            ret = (unsigned char)RxBuf[IRPos - 2];
-        }
+        if (IRPos == 1) ret = ReadIR();
+        else ret = (unsigned char)RxBuf[IRPos - 2]; // We start returning actual packet data to the game now
         break;
 
     case 0x02: // Write to IR
         TxBuf[IRPos - 1] = val; // Load spi data into Tx Buffer
-        // Note: 'last' parameter not available in new SPI interface
-        // We'll handle this differently - check if we've received a full packet
         ret = 0x00; // Return value on success
         break;
 
@@ -143,20 +131,16 @@ u8 CartRetailIR::SPITransmitReceive(u8 val)
     return ret;
 }
 
-/*
-   This is convoluted because 1: I haven't rewritten it to be nice and 2: We need to wait 3500us for no data.
-   If we do NOT wait, walker emulators may work, but real hardware won't. Precise timings should be handled
-   HERE to make Platform.h implementations as simple as possible.
-*/
 u8 CartRetailIR::ReadIR()
 {
     memset(RxBuf, 0, sizeof(RxBuf));
     return Platform::IRReceivePacket(RxBuf, sizeof(RxBuf), UserData);
 }
 
-// Sends an entire packet to the frontend.
 u8 CartRetailIR::SendIR(u8 len)
 {
+    // This packet needs to WAIT or else it will be piggybacked onto the latest packet (on the pokewalker's end)
+    if ((u8)TxBuf[0] == 0x5E) Platform::Sleep(10000); 
     return Platform::IRSendPacket(TxBuf, len, UserData);
 }
 

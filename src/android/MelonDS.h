@@ -5,6 +5,7 @@
 #include <vector>
 #include "AndroidFileHandler.h"
 #include "AndroidCameraHandler.h"
+#include "AndroidIRHandler.h"
 #include "Configuration.h"
 #include "MelonEventMessenger.h"
 #include "RewindManager.h"
@@ -31,11 +32,12 @@ namespace MelonDSAndroid {
     extern OpenGLContext *openGlContext;
     extern AndroidFileHandler* fileHandler;
     extern AndroidCameraHandler* cameraHandler;
+    extern AndroidIRHandler* irHandler;
     extern std::string internalFilesDir;
     extern std::shared_ptr<MelonEventMessenger> eventMessenger;
 
     extern void setConfiguration(EmulatorConfiguration emulatorConfiguration);
-    extern void setup(AndroidCameraHandler* androidCameraHandler, std::shared_ptr<MelonEventMessenger> androidEventMessenger, u32* screenshotBufferPointer, int instanceId);
+    extern void setup(AndroidCameraHandler* androidCameraHandler, AndroidIRHandler* androidIRHandler, std::shared_ptr<MelonEventMessenger> androidEventMessenger, u32* screenshotBufferPointer, int instanceId);
     extern void setCodeList(std::list<Cheat> cheats);
     extern void setupAchievements(std::list<RetroAchievements::RAAchievement> achievements, std::list<RetroAchievements::RALeaderboard> leaderboards, std::optional<std::string> richPresenceScript);
     extern void unloadRetroAchievementsData();

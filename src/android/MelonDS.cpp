@@ -21,6 +21,7 @@
 #include "ROMManager.h"
 #include "MPInterface.h"
 #include "AndroidCameraHandler.h"
+#include "IR.h"
 #include "renderer/ScreenshotRenderer.h"
 #include "renderer/FrameQueue.h"
 #include "retroachievements/RetroAchievementsManager.h"
@@ -33,6 +34,7 @@ namespace MelonDSAndroid
     OpenGLContext *openGlContext;
     AndroidFileHandler* fileHandler;
     AndroidCameraHandler* cameraHandler;
+    AndroidIRHandler* irHandler;
     std::string internalFilesDir;
     std::shared_ptr<MelonEventMessenger> eventMessenger;
     std::shared_ptr<EmulatorConfiguration> currentConfiguration;
@@ -58,10 +60,11 @@ namespace MelonDSAndroid
         }));
     }
 
-    void setup(AndroidCameraHandler* androidCameraHandler, std::shared_ptr<MelonEventMessenger> androidEventMessenger, u32* screenshotBufferPointer, int instanceId)
-    {
+void setup(AndroidCameraHandler* androidCameraHandler, AndroidIRHandler* androidIRHandler, RetroAchievements::RACallback* raCallback, u32* screenshotBufferPointer, int instanceId) {
         cameraHandler = androidCameraHandler;
         eventMessenger = androidEventMessenger;
+        irHandler = androidIRHandler;
+        melonDS::Platform::setHandler(androidIRHandler);
         RetroAchievements::RetroAchievementsManager::EventMessenger = androidEventMessenger;
 
         auto instanceArgs = BuildArgsFromConfiguration(*currentConfiguration, instanceId);

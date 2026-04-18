@@ -1131,17 +1131,99 @@ u8 CartRetailIR::SPIWrite(u8 val, u32 pos, bool last)
         return 0;
     }
 
-    // TODO: emulate actual IR comm
-
     switch (IRCmd)
     {
     case 0x00: // pass-through
         return CartRetail::SPIWrite(val, pos-1, last);
 
+    case 0x01: // Read from IR
+        if (pos == 1){
+            // Initiates the read. A whole packet will be grabbed from the hardware
+            // and stored in RxBuf. The return value is the length of the packet
+            // and will tell the game to keep sending SPI commands.
+            return ReadIR();
+        }
+        else{
+            // Return packet data to the game byte by byte
+            u8 data = (unsigned char) RxBuf[pos-2];
+            return data;
+        }
+
+    case 0x02: // Write to IR
+        TxBuf[pos-1] = (u8) val; // Load SPI data into Tx Buffer
+        if (last == 1){
+            u8 sendLen = pos;
+            // Last communication - send the packet
+            SendIR(sendLen);
+        }
+        return 0x00;
+
     case 0x08: // ID
         return 0xAA;
     }
 
+    return 0;
+}
+
+/*
+   IR receive implementation
+   This is complex because we need to wait 3500us for no data.
+   If we do NOT wait, walker emulators may work, but real hardware won't.
+   Precise timings are handled here to make Platform.h implementations as simple as possible.
+*/
+u8 CartRetailIR::ReadIR(){
+	char tempBuf[0xB8];
+	u8 pointer = 0;
+
+    int len = Platform::IR_ReceivePacket(tempBuf, sizeof(tempBuf), UserData);
+    long long lastRxTime = Platform::GetUSCount();
+
+    // Enter receive loop if bytes are available
+	if (len > 0){
+		lastRxTime = Platform::GetUSCount();
+		for(int i = 0; i < len; i++){
+			RxBuf[pointer + i] = tempBuf[i];
+		}
+		pointer = pointer + len;
+
+        // Keep trying to receive until timeout has passed with no data
+        // Android USB CDC has higher latency than desktop serial, so we use a longer timeout
+        const long long rxTimeoutUs = 20000;  // 20ms timeout for USB CDC latency
+		while(true){
+            long long diff = Platform::GetUSCount() - lastRxTime;
+
+            if (diff > rxTimeoutUs) break;
+
+            len = Platform::IR_ReceivePacket(tempBuf, sizeof(tempBuf), UserData);
+
+			if (len <= 0){ continue;}
+			else{
+				lastRxTime = Platform::GetUSCount();
+				for(int i = 0; i < len; i++){
+					RxBuf[pointer + i] = tempBuf[i];
+				}
+				pointer = pointer + len;
+			}
+		}
+    }
+
+	recvLen = pointer;
+	if (recvLen == 0) return 0;
+
+    Platform::IR_LogPacket((char *) &RxBuf, recvLen, false, UserData);
+	return recvLen;
+}
+
+// Send a complete packet to the hardware
+u8 CartRetailIR::SendIR(u8 len){
+    Platform::IR_LogPacket((char *) &TxBuf, len, true, UserData);
+    int sent;
+	// Immediate disconnect packet needs to wait to avoid piggybacking
+	if ((u8)TxBuf[0] == 94) Platform::Sleep(10000);
+    sent = Platform::IR_SendPacket(TxBuf, len, UserData);
+    if (sent < 0) {
+        Log(LogLevel::Error, "IR send error\n");
+    }
     return 0;
 }
 

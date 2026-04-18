@@ -34,6 +34,7 @@
 #include "MelonInstance.h"
 #include "MelonLog.h"
 #include "net/MPInterface.h"
+#include "IR.h"
 
 using namespace melonDS;
 
@@ -584,6 +585,20 @@ namespace Platform
     int Mic_ReadInput(s16* data, int maxlength, void* userdata)
     {
         return MelonDSAndroid::readMic(data, maxlength);
+    }
+    
+    u64 GetMSCount()
+    {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        return (u64)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    }
+
+    u64 GetUSCount()
+    {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        return (u64)ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
     }
 
     void Camera_Start(int num, void* userdata)

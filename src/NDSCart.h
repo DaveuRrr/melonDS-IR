@@ -233,6 +233,14 @@ public:
 private:
     u32 IRVersion = 0;
     u8 IRCmd = 0;
+
+    u8 recvLen = 0;
+    char TxBuf[0xB8];
+    char RxBuf[0xB8];
+
+    // IR communication methods
+    u8 SendIR(u8 len);
+    u8 ReadIR();
 };
 
 // CartRetailBT - Pok�mon Typing Adventure (SPI BT controller)

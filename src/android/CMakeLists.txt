@@ -15,6 +15,7 @@ set(ANDROID_SOURCES
         SDCardArgsBuilder.cpp
         MelonInstance.cpp
         DSiSupport.cpp
+        IR.cpp
         renderer/ScreenshotRenderer.cpp
         renderer/FrameQueue.cpp
         retroachievements/RetroAchievementsManager.cpp

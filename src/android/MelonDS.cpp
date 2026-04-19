@@ -60,7 +60,7 @@ namespace MelonDSAndroid
         }));
     }
 
-void setup(AndroidCameraHandler* androidCameraHandler, AndroidIRHandler* androidIRHandler, RetroAchievements::RACallback* raCallback, u32* screenshotBufferPointer, int instanceId) {
+void setup(AndroidCameraHandler* androidCameraHandler, AndroidIRHandler* androidIRHandler, std::shared_ptr<MelonEventMessenger> androidEventMessenger, u32* screenshotBufferPointer, int instanceId) {
         cameraHandler = androidCameraHandler;
         eventMessenger = androidEventMessenger;
         irHandler = androidIRHandler;

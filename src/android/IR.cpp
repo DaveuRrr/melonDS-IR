@@ -135,27 +135,10 @@ u8 IRReceivePacketSerial(char* data, int len, void* userdata)
         return 0;
     }
 
-    // Only enter the timeout loop if we got something — mirrors old ReadIR() behaviour
-    // and avoids blocking 20ms on every call when there's nothing to receive
-    if (bytesRead == 0) return 0;
-
-    int totalBytes = bytesRead;
-    const long long rxTimeoutMs = 20;  // 20ms timeout for USB CDC latency
-
-    // Use blocking read (OS sleep) instead of busy-spinning.
-    // readSerialBlocking waits up to rxTimeoutMs for the next byte, then drains the rest
-    // non-blocking — equivalent to the old busy-spin but without burning CPU.
-    while (totalBytes < len)
-    {
-        bytesRead = irHandler->readSerialBlocking(data + totalBytes, len - totalBytes, rxTimeoutMs);
-        if (bytesRead <= 0) break;
-        totalBytes += bytesRead;
-    }
-
     // TODO irHandler->serialFlush();
-
-    //LOGD("Serial read %d bytes", totalBytes);
-    return static_cast<u8>(totalBytes);
+    
+    //LOGD("Serial read %d bytes", bytesRead);
+    return static_cast<u8>(bytesRead);
 }
 
 u8 IRReceivePacketTCP(char* data, int len, void* userdata)

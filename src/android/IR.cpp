@@ -99,8 +99,6 @@ u8 IRSendPacketTCP(char* data, int len, void* userdata)
     return static_cast<u8>(written);
 }
 
-u8 IRSendPacketDirectStorage(char* data, int len, void* userdata) { return 0;}
-
 u8 IRSendPacket(char* data, int len, void* userdata)
 {
     // LOGD("IRSendPacket called: data=%p, len=%d", data, len);
@@ -116,7 +114,6 @@ u8 IRSendPacket(char* data, int len, void* userdata)
         case 0: return 0;
         case 1: return IRSendPacketSerial(data, len, userdata);
         case 2: return IRSendPacketTCP(data, len, userdata);
-        case 3: return IRSendPacketDirectStorage(data, len, userdata);
         default: return 0;
     }
 
@@ -162,8 +159,6 @@ u8 IRReceivePacketTCP(char* data, int len, void* userdata)
     return static_cast<u8>(bytesRead);
 }
 
-u8 IRReceivePacketDirectStorage(char* data, int len, void* userdata) { return 0;}
-
 u8 IRReceivePacket(char* data, int len, void* userdata)
 {
     // LOGD("IRReceivePacket called: data=%p, len=%d", data, len);
@@ -180,7 +175,6 @@ u8 IRReceivePacket(char* data, int len, void* userdata)
         case 0: return 0;
         case 1: return IRReceivePacketSerial(data, len, userdata);
         case 2: return IRReceivePacketTCP(data, len, userdata);
-        case 3: return IRReceivePacketDirectStorage(data, len, userdata);
         default: return 0;
     }
 }

@@ -21,7 +21,8 @@ int irMode = 0;
  * Set IR transport mode
  * @param mode // 0 = None (disabled), 1 = USB Serial, 2 = TCP, 3 = Direct Storage
  */
-void setIRMode(int mode) {
+void setIRMode(int mode)
+{
     irMode = mode;
     LOGD("IR mode set: %d", mode);
 }
@@ -30,25 +31,36 @@ void setIRMode(int mode) {
  * Set IR handler instance
  * Called during setup to provide the platform-specific IR handler
  */
-void setHandler(MelonDSAndroid::AndroidIRHandler* handler) {
+void setHandler(MelonDSAndroid::AndroidIRHandler* handler)
+{
     ::irHandler = handler;
     LOGD("IR handler set: %p", handler);
 }
 
 
-static bool IR_Open_Serial() {
+static bool IROpenSerial()
+{
 
-    if (!irHandler->isSerialOpen())
-    {
-        return irHandler->openSerial();
-    }
-    
+    if (!irHandler->isSerialOpen()) return irHandler->openSerial();
     return irHandler->isSerialOpen();
 }
 
-u8 IR_SendPacket_Serial(char* data, int len, void* userdata) {
+static bool IROpenTCP()
+{
 
-    if (!IR_Open_Serial())
+    if (!irHandler->isTCPOpen())
+    {
+        bool result = irHandler->openTCP();
+        return result;
+    }
+
+    return irHandler->isTCPOpen();
+}
+
+u8 IRSendPacketSerial(char* data, int len, void* userdata)
+{
+
+    if (!IROpenSerial())
     {
         LOGE("Serial is not Open");
         return 0;
@@ -56,7 +68,8 @@ u8 IR_SendPacket_Serial(char* data, int len, void* userdata) {
 
     int written = irHandler->writeSerial(data, len);
 
-     if (written < 0) {
+     if (written < 0)
+     {
         LOGE("Serial write error");
         return 0;
     }
@@ -68,14 +81,32 @@ u8 IR_SendPacket_Serial(char* data, int len, void* userdata) {
 
 }
 
-u8 IR_SendPacket_TCP(char* data, int len, void* userdata) { return 0;}
+u8 IRSendPacketTCP(char* data, int len, void* userdata)
+{
+    if (!IROpenTCP())
+    {
+        LOGE("TCP connection is not Open");
+        return 0;
+    }
 
-u8 IR_SendPacket_DirectStorage(char* data, int len, void* userdata) { return 0;}
+    int written = irHandler->writeTCP(data, len);
+    if (written < 0)
+    {
+        LOGE("TCP write error");
+        return 0;
+    }
 
-u8 IR_SendPacket(char* data, int len, void* userdata) {
-    // LOGD("IR_SendPacket called: data=%p, len=%d", data, len);
+    return static_cast<u8>(written);
+}
 
-    if (!data || len <= 0) {
+u8 IRSendPacketDirectStorage(char* data, int len, void* userdata) { return 0;}
+
+u8 IRSendPacket(char* data, int len, void* userdata)
+{
+    // LOGD("IRSendPacket called: data=%p, len=%d", data, len);
+
+    if (!data || len <= 0)
+    {
         LOGE("IRSendPacket: invalid parameters (data=%p, len=%d)", data, len);
         return 0;
     }
@@ -83,16 +114,17 @@ u8 IR_SendPacket(char* data, int len, void* userdata) {
     switch (irMode)
     {
         case 0: return 0;
-        case 1: return IR_SendPacket_Serial(data, len, userdata);
-        case 2: return IR_SendPacket_TCP(data, len, userdata);
-        case 3: return IR_SendPacket_DirectStorage(data, len, userdata);
+        case 1: return IRSendPacketSerial(data, len, userdata);
+        case 2: return IRSendPacketTCP(data, len, userdata);
+        case 3: return IRSendPacketDirectStorage(data, len, userdata);
         default: return 0;
     }
 
 }
 
-u8 IR_ReceivePacket_Serial(char* data, int len, void* userdata) {
-    if (!IR_Open_Serial())
+u8 IRReceivePacketSerial(char* data, int len, void* userdata)
+{
+    if (!IROpenSerial())
     {
         LOGE("Serial is not Open");
         return 0;
@@ -100,7 +132,8 @@ u8 IR_ReceivePacket_Serial(char* data, int len, void* userdata) {
 
     int bytesRead = irHandler->readSerial(data, len);
 
-    if (bytesRead < 0) {
+    if (bytesRead < 0)
+    {
         LOGE("Serial read error");
         return 0;
     }
@@ -111,15 +144,33 @@ u8 IR_ReceivePacket_Serial(char* data, int len, void* userdata) {
     return static_cast<u8>(bytesRead);
 }
 
-u8 IR_ReceivePacket_TCP(char* data, int len, void* userdata) { return 0;}
+u8 IRReceivePacketTCP(char* data, int len, void* userdata)
+{
+    if (!IROpenTCP())
+    {
+        LOGE("TCP connection is not Open");
+        return 0;
+    }
 
-u8 IR_ReceivePacket_DirectStorage(char* data, int len, void* userdata) { return 0;}
+    int bytesRead = irHandler->readTCP(data, len);
+    if (bytesRead < 0)
+    {
+        LOGE("TCP read error");
+        return 0;
+    }
 
-u8 IR_ReceivePacket(char* data, int len, void* userdata) {
-    // LOGD("IR_ReceivePacket called: data=%p, len=%d", data, len);
+    return static_cast<u8>(bytesRead);
+}
 
-    if (!data || len <= 0) {
-        LOGE("IR_ReceivePacket: invalid parameters (data=%p, len=%d)", data, len);
+u8 IRReceivePacketDirectStorage(char* data, int len, void* userdata) { return 0;}
+
+u8 IRReceivePacket(char* data, int len, void* userdata)
+{
+    // LOGD("IRReceivePacket called: data=%p, len=%d", data, len);
+
+    if (!data || len <= 0)
+    {
+        LOGE("IRReceivePacket: invalid parameters (data=%p, len=%d)", data, len);
         return 0;
     }
 
@@ -127,30 +178,29 @@ u8 IR_ReceivePacket(char* data, int len, void* userdata) {
     switch (irMode)
     {
         case 0: return 0;
-        case 1: return IR_ReceivePacket_Serial(data, len, userdata);
-        case 2: return IR_ReceivePacket_TCP(data, len, userdata);
-        case 3: return IR_ReceivePacket_DirectStorage(data, len, userdata);
+        case 1: return IRReceivePacketSerial(data, len, userdata);
+        case 2: return IRReceivePacketTCP(data, len, userdata);
+        case 3: return IRReceivePacketDirectStorage(data, len, userdata);
         default: return 0;
     }
 }
 
-void IR_LogPacket(char* data, int len, bool isTx, void* userdata) {
-    if (!data || len <= 0) {
-        // TODO Log
-        return;
-    }
+void IRLogPacket(char* data, int len, bool isTx, void* userdata)
+{
+    if (!data || len <= 0) return;
 
     const char* direction = isTx ? "Tx" : "Rx";
 
     char hexStr[512] = {0};
     int offset = 0;
 
-    for (int i = 0; i < len && offset < 500; i++) {
+    for (int i = 0; i < len && offset < 500; i++)
+    {
         offset += snprintf(hexStr + offset, sizeof(hexStr) - offset,
                           "%02X ", static_cast<unsigned char>(data[i]));
     }
 
-    LOGD("IR_LogPacket %s: %s", direction, hexStr);
+    LOGD("IRLogPacket %s: %s", direction, hexStr);
 }
 
 } // namespace melonDS::Platform 

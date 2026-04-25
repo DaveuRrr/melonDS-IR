@@ -168,6 +168,32 @@
             </property>
            </widget>
           </item> -->
+          <item row="1" column="3">
+           <widget class="QLabel" name="labelReadTimeout">
+            <property name="text">
+             <string>Read timeout (us):</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="4">
+           <widget class="QSpinBox" name="boxReadTimeoutUs">
+            <property name="toolTip">
+             <string>How long to wait for the first byte of a response before giving up.</string>
+            </property>
+            <property name="minimum">
+             <number>0</number>
+            </property>
+            <property name="maximum">
+             <number>10000</number>
+            </property>
+            <property name="singleStep">
+             <number>50</number>
+            </property>
+            <property name="value">
+             <number>500</number>
+            </property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>

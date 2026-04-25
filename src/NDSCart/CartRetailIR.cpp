@@ -140,7 +140,7 @@ u8 CartRetailIR::ReadIR()
 u8 CartRetailIR::SendIR(u8 len)
 {
     // This packet needs to WAIT or else it will be piggybacked onto the latest packet (on the pokewalker's end)
-    if ((u8)TxBuf[0] == 0x5E) Platform::Sleep(10000); 
+    if ((u8)TxBuf[0] == 0x5E) Platform::Sleep(10000);
     return Platform::IRSendPacket(TxBuf, len, UserData);
 }
 

@@ -471,11 +471,19 @@ u8 IRSendPacketSerial(char* data, int len, void* userdata)
 
     if (!Serial || !Serial->isOpen()) return 0;
 
+    EmuInstance* inst = (EmuInstance*)userdata;
+    int sendDelayUs = inst->getLocalConfig().GetInt("IR.Serial.SendDelayUs");
+    if (sendDelayUs > 0)
+    {
+        long long start = Platform::GetUSCount();
+        while ((Platform::GetUSCount() - start) < sendDelayUs) {}
+    }
+
     qint64 bytesWritten = Serial->write(data, len);
 
     Serial->flush();
 
-    Log(LogLevel::Info, "Serial Write %d bytes: %s\n", bytesWritten, IRBytesToString(data, len).c_str());
+    Log(LogLevel::Info, "Serial Write %d bytes [delay %d]: %s\n", bytesWritten, sendDelayUs, IRBytesToString(data, len).c_str());
 
     return static_cast<u8>(bytesWritten);
 }

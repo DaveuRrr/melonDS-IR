@@ -76,6 +76,8 @@ IRSettingsDialog::IRSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui
     ui->txtSerialPath->setText(cfg.GetQString("IR.SerialPortPath"));
     int readTimeout = cfg.GetInt("IR.Serial.ReadTimeoutUs");
     ui->boxReadTimeoutUs->setValue(readTimeout); // 500
+    int sendDelay = cfg.GetInt("IR.Serial.SendDelayUs");
+    ui->boxSendDelayUs->setValue(sendDelay);
     // ui->txtEepromFile->setText(cfg.GetQString("IR.EEPROMPath"));
     //ui->textSerialPath->text());
 
@@ -187,6 +189,7 @@ void IRSettingsDialog::done(int r)
         cfg.SetInt("IR.Mode", IRMode);
         cfg.SetQString("IR.SerialPortPath", ui->txtSerialPath->text());
         cfg.SetInt("IR.Serial.ReadTimeoutUs", ui->boxReadTimeoutUs->value());
+        cfg.SetInt("IR.Serial.SendDelayUs", ui->boxSendDelayUs->value());
 
         // cfg.SetQString("IR.EEPROMPath", ui->txtEepromFile->text());
 

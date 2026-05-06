@@ -473,11 +473,7 @@ u8 IRSendPacketSerial(char* data, int len, void* userdata)
 
     EmuInstance* inst = (EmuInstance*)userdata;
     int sendDelayUs = inst->getLocalConfig().GetInt("IR.Serial.SendDelayUs");
-    if (sendDelayUs > 0)
-    {
-        long long start = Platform::GetUSCount();
-        while ((Platform::GetUSCount() - start) < sendDelayUs) {}
-    }
+    Sleep(sendDelayUs);
 
     qint64 bytesWritten = Serial->write(data, len);
 

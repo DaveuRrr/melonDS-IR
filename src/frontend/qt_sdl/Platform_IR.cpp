@@ -471,15 +471,11 @@ u8 IRSendPacketSerial(char* data, int len, void* userdata)
 
     if (!Serial || !Serial->isOpen()) return 0;
 
-    EmuInstance* inst = (EmuInstance*)userdata;
-    int sendDelayUs = inst->getLocalConfig().GetInt("IR.Serial.SendDelayUs");
-    Sleep(sendDelayUs);
-
-    qint64 bytesWritten = Serial->write(data, len);
+    int bytesWritten = Serial->write(data, len);
 
     Serial->flush();
 
-    Log(LogLevel::Info, "Serial Write %d bytes [delay %d]: %s\n", bytesWritten, sendDelayUs, IRBytesToString(data, len).c_str());
+    Log(LogLevel::Info, "Serial Write %d bytes: %s\n", bytesWritten, IRBytesToString(data, len).c_str());
 
     return static_cast<u8>(bytesWritten);
 }
@@ -491,27 +487,10 @@ u8 IRReceivePacketSerial(char* data, int len, void* userdata)
 
     if (!Serial || !Serial->isOpen() || !Serial->bytesAvailable()) return 0;
 
-    EmuInstance* inst = (EmuInstance*)userdata;
-    int readTimeoutUs = inst->getLocalConfig().GetInt("IR.Serial.ReadTimeoutUs");
 
     int bytesRead = Serial->read(data, len);
-    if (bytesRead > 0)
-    {
-        u8 pointer = (u8)bytesRead;
-        long long lastRxTime = Platform::GetUSCount();
-        while ((Platform::GetUSCount() - lastRxTime) < readTimeoutUs)
-        {
-            bytesRead = Serial->read(data + pointer, len - pointer);
-            if (bytesRead > 0)
-            {
-                pointer += (u8)bytesRead;
-                lastRxTime = Platform::GetUSCount();
-            }
-        }
-        bytesRead = pointer;
-    }
 
-    Log(LogLevel::Info, "Serial Read %d bytes [timeout %d]: %s\n", bytesRead, readTimeoutUs, IRBytesToString(data, bytesRead).c_str());
+    Log(LogLevel::Info, "Serial Read %d bytes: %s\n", bytesRead, IRBytesToString(data, bytesRead).c_str());
     
     return static_cast<u8>(bytesRead);
 }
@@ -570,6 +549,18 @@ void IRClose()
     IRENetDeinit();
     IRSocketClose();
     IRSerialClosePort();
+}
+
+int IRReadTimeOutUs(void* userdata)
+{
+    EmuInstance* inst = (EmuInstance*)userdata;
+    return inst->getLocalConfig().GetInt("IR.Serial.ReadTimeoutUs");
+}
+
+int IRSendDelayUs(void* userdata)
+{
+    EmuInstance* inst = (EmuInstance*)userdata;
+    return inst->getLocalConfig().GetInt("IR.Serial.SendDelayUs");
 }
 
 }

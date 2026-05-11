@@ -489,6 +489,16 @@ u8 IRSendPacket(char* data, int len, void* userdata);
 u8 IRReceivePacket(char* data, int len, void* userdata);
 
 /**
+ * @return readTimeout from config
+*/
+int IRReadTimeOutUs(void* userdata);
+
+/**
+ * @return sendDelay from config
+ */
+int IRSendDelayUs(void* userdata);
+
+/**
  * Close All or Any Open IR connections
  */
 void IRClose();
